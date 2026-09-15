@@ -1,0 +1,15 @@
+# Documentación interna del proyecto
+PROJECT.md
+PLAN.md
+
+# Herramientas de IA
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.cursorrules
+.copilot/
+.github/copilot-instructions.md
+.aider*
+.windsurfrules
+.codex/
