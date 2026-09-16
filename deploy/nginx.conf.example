@@ -24,6 +24,7 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         client_max_body_size 5m;
     }
+    location = /sanctum/csrf-cookie { proxy_pass http://api:8000/sanctum/csrf-cookie; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; }
     location /storage/ { proxy_pass http://api:8000/storage/; expires 30d; }
 
     # --- SPA ---

@@ -13,7 +13,7 @@ Requiere Node 22.22+ (`nvm use 22`). La API debe estar corriendo (`docker compos
 ```
 src/app/
 ├── core/          models.ts (tipos = schemas Swagger), api.service.ts (un método por endpoint),
-│                  auth.service.ts (token/usuario en signals + localStorage), auth.interceptor.ts (Bearer, 401 → /login), guards.ts
+│                  auth.service.ts (usuario en signal + localStorage; la sesión es cookie HttpOnly), auth.interceptor.ts (credenciales + X-XSRF-TOKEN, 401 → /login), guards.ts
 ├── layout/        shell.ts (cabecera + nav + outlet)
 └── features/      una carpeta por área, componentes lazy: auth, catalog, cart, checkout, orders, invoices, account, admin
 ```
@@ -58,8 +58,9 @@ Qué protege y dónde está:
 | XSS | Angular escapa todo; no hay `innerHTML` ni `bypassSecurityTrust`. CSP `script-src 'self'` sin inline (por eso `inlineCritical: false` en `angular.json`). |
 | Open redirect | `?redirect=` pasa por `core/safe-url.ts` (`safeInternalPath`): solo rutas internas. |
 | Redirección a pasarela | `safeGatewayUrl`: solo `https` (http únicamente a localhost). Enlaces externos con `rel="noopener noreferrer"`. |
-| Fuga de credenciales | El interceptor solo añade `Authorization`/`X-Cart-Token` a `environment.apiUrl`; nunca a otros hosts. Test e2e lo verifica. |
-| Sesión manipulada | `localStorage` se valida por forma; el rol se confirma con `/auth/me` al arrancar y en el guard de `/admin`. Un 401 limpia la sesión. |
+| Robo de sesión por XSS | La sesión es una cookie `HttpOnly` (Sanctum SPA); el navegador no tiene ningún token legible. Escrituras llevan `X-XSRF-TOKEN` (cookie `XSRF-TOKEN` de Laravel); un 419 refresca el token y reintenta una vez. |
+| Fuga de credenciales | El interceptor solo manda credenciales/`X-XSRF-TOKEN`/`X-Cart-Token` a `environment.apiUrl`; nunca a otros hosts. Test e2e lo verifica. |
+| Sesión manipulada | El usuario cacheado en `localStorage` se valida por forma; el rol se confirma con `/auth/me` al arrancar y en el guard de `/admin`. Un 401 limpia la sesión. |
 | Fugas en errores | 5xx y 429 muestran mensajes genéricos; nunca el texto del servidor. |
 | Clickjacking / MIME / referrer | `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, HSTS: cabeceras en `deploy/nginx.conf.example` (no funcionan en `<meta>`). `<meta name="referrer">` como refuerzo. |
 | Entradas | `maxlength`/`autocomplete` en formularios; la API valida siempre. |
@@ -68,5 +69,5 @@ Qué protege y dónde está:
 
 - `src/index.html` lleva la CSP de producción (`connect-src 'self'`: la API va detrás del mismo dominio, `environment.prod.ts` → `/api/v1`). `src/index.dev.html` es la de `ng serve` (permite `localhost:8000` y el websocket).
 - En producción `APP_URL` de la API debe ser el dominio público: las URLs de imágenes son absolutas y `img-src 'self'` bloquea cualquier otro host.
-- Pendiente (decisión de arquitectura): mover el token a cookie `HttpOnly` con Sanctum en modo SPA (+ CSRF). Hoy el bearer vive en `localStorage`; la CSP estricta es la mitigación.
+- Sesión en cookie `HttpOnly` con Sanctum SPA (+ CSRF) desde 2026-09-16. La API debe listar el origen del front en `SANCTUM_STATEFUL_DOMAINS` y nginx proxyear `/sanctum/csrf-cookie`.
 - Tests: `e2e/security.spec.ts` (open redirect, XSS reflejado, no fuga de credenciales/terceros, rol manipulado, rutas privadas, CSP, 401).

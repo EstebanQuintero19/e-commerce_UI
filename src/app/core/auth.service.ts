@@ -3,9 +3,9 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { rotateGuestCartToken } from './guest';
-import { AuthToken, User, Wrapped } from './models';
+import { AuthSession, User, Wrapped } from './models';
 
-const TOKEN_KEY = 'token';
+// La sesión vive en una cookie HttpOnly que pone la API; aquí solo se cachea el usuario para pintar sin esperar a /auth/me.
 const USER_KEY = 'user';
 
 @Injectable({ providedIn: 'root' })
@@ -13,17 +13,16 @@ export class AuthService {
   private http = inject(HttpClient);
 
   readonly user = signal<User | null>(validUser(this.read<unknown>(USER_KEY)));
-  readonly token = signal<string | null>(validToken(this.read<unknown>(TOKEN_KEY)));
-  readonly isLoggedIn = computed(() => this.token() !== null);
+  readonly isLoggedIn = computed(() => this.user() !== null);
   readonly isAdmin = computed(() => this.user()?.role === 'admin');
 
   login(email: string, password: string) {
-    return this.http.post<AuthToken>(`${environment.apiUrl}/auth/login`, { email, password }).pipe(tap((r) => this.store(r)));
+    return this.http.post<AuthSession>(`${environment.apiUrl}/auth/login`, { email, password }).pipe(tap((r) => this.store(r)));
   }
 
   register(name: string, email: string, password: string, password_confirmation: string) {
     return this.http
-      .post<AuthToken>(`${environment.apiUrl}/auth/register`, { name, email, password, password_confirmation })
+      .post<AuthSession>(`${environment.apiUrl}/auth/register`, { name, email, password, password_confirmation })
       .pipe(tap((r) => this.store(r)));
   }
 
@@ -35,19 +34,15 @@ export class AuthService {
     return this.http.get<Wrapped<User>>(`${environment.apiUrl}/auth/me`).pipe(tap((r) => this.user.set(r.data)));
   }
 
-  // Llamado por el interceptor cuando el backend responde 401 (token vencido o revocado).
+  // Llamado por el interceptor cuando el backend responde 401 (sesión vencida o cerrada en otro sitio).
   clear() {
-    this.token.set(null);
     this.user.set(null);
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   }
 
-  private store(r: AuthToken) {
+  private store(r: AuthSession) {
     rotateGuestCartToken(); // el backend ya fusionó el carrito de invitado en la cuenta
-    this.token.set(r.token);
     this.user.set(r.user);
-    localStorage.setItem(TOKEN_KEY, JSON.stringify(r.token));
     localStorage.setItem(USER_KEY, JSON.stringify(r.user));
   }
 
@@ -68,7 +63,4 @@ function validUser(v: unknown): User | null {
   const u = v as Record<string, unknown>;
   if (typeof u['id'] !== 'number' || typeof u['name'] !== 'string' || typeof u['email'] !== 'string') return null;
   return { id: u['id'], name: u['name'].slice(0, 120), email: u['email'].slice(0, 200), role: u['role'] === 'admin' ? 'admin' : 'customer' };
-}
-function validToken(v: unknown): string | null {
-  return typeof v === 'string' && /^[\w|.-]{20,200}$/.test(v) ? v : null;
 }

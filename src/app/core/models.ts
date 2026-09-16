@@ -2,7 +2,7 @@
 
 export type Role = 'customer' | 'admin';
 export interface User { id: number; name: string; email: string; role: Role; }
-export interface AuthToken { token: string; user: User; }
+export interface AuthSession { user: User; } // la sesión va en cookie HttpOnly; no hay token en el navegador
 
 export interface Category { id: number; name: string; slug: string; is_active: boolean; parent_id: number | null; }
 export interface Variant {

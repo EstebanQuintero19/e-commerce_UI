@@ -1,30 +1,34 @@
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, throwError } from 'rxjs';
+import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { guestCartToken } from './guest';
 
-// Cabeceras de sesión SOLO hacia nuestra API: el bearer y el token de carrito no deben viajar a ningún otro host.
-// 401 con token → sesión limpia y a /login.
+// Sesión en cookie HttpOnly (Sanctum SPA): las peticiones a nuestra API van con credenciales y, si escriben, con el
+// token CSRF que Laravel deja en la cookie XSRF-TOKEN. Nada de esto viaja a otros hosts. 401 con sesión → limpia y a /login.
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   if (!isApiUrl(req.url)) return next(req);
 
   const auth = inject(AuthService);
   const router = inject(Router);
-  const token = auth.token();
-  const authed = req.clone({
-    setHeaders: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      'X-Cart-Token': guestCartToken(),
-    },
-  });
+  const http = inject(HttpClient);
 
-  return next(authed).pipe(
+  const send = (r: HttpRequest<unknown>) => {
+    const xsrf = xsrfToken();
+    return next(r.clone({
+      withCredentials: true,
+      setHeaders: { Accept: 'application/json', 'X-Cart-Token': guestCartToken(), ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}) },
+    }));
+  };
+  const csrf = () => http.get(CSRF_URL, { withCredentials: true });
+  const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+
+  return (mutating && !xsrfToken() ? csrf().pipe(switchMap(() => send(req))) : send(req)).pipe(
     catchError((err: HttpErrorResponse) => {
-      if (err.status === 401 && token) {
+      if (err.status === 419) return csrf().pipe(switchMap(() => send(req))); // token CSRF vencido: uno nuevo y un reintento
+      if (err.status === 401 && auth.isLoggedIn()) {
         auth.clear();
         router.navigate(['/login'], { queryParams: { redirect: router.url } });
       }
@@ -32,6 +36,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     }),
   );
 };
+
+const CSRF_URL = environment.apiUrl.replace(/\/api\/v1$/, '') + '/sanctum/csrf-cookie';
+
+function xsrfToken(): string | null {
+  const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
 
 function isApiUrl(url: string): boolean {
   const base = environment.apiUrl;

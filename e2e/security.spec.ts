@@ -2,12 +2,21 @@ import { expect, test, type Page } from '@playwright/test';
 
 const API = 'http://localhost:8000/api/v1';
 
+// Con Origin del front la API responde con la cookie de sesión (HttpOnly), que queda en el contexto del navegador.
+// La SPA además cachea el usuario en localStorage para pintar sin esperar a /auth/me.
 async function registerViaApi(page: Page) {
   const email = `sec-${Date.now()}@test.co`;
   const password = 'clave-segura-123';
-  const res = await page.request.post(`${API}/auth/register`, { data: { name: 'Sec Test', email, password, password_confirmation: password } });
+  await page.request.get(`${API.replace(/\/api\/v1$/, '')}/sanctum/csrf-cookie`, { headers: { Origin: 'http://localhost:4200' } });
+  const xsrf = (await page.context().cookies()).find((c) => c.name === 'XSRF-TOKEN')!.value;
+  const res = await page.request.post(`${API}/auth/register`, {
+    data: { name: 'Sec Test', email, password, password_confirmation: password },
+    headers: { Origin: 'http://localhost:4200', 'X-XSRF-TOKEN': decodeURIComponent(xsrf) },
+  });
   expect(res.ok()).toBeTruthy();
-  return { email, password, token: (await res.json()).token as string };
+  const body = await res.json();
+  expect(body.token).toBeUndefined();
+  return { email, password, user: body.user as { id: number; name: string; email: string; role: string } };
 }
 
 test.describe('Hardening', () => {
@@ -20,9 +29,28 @@ test.describe('Hardening', () => {
       await page.getByRole('button', { name: 'Iniciar sesión' }).click();
       // Nunca sale del origen: aterriza en la tienda (o en el inicio si el router no pudo interpretar el parámetro).
       await expect(page).toHaveURL(/^http:\/\/localhost:4200\/(productos)?$/);
-      expect(await page.evaluate(() => localStorage.getItem('token'))).not.toBeNull(); // la sesión sí se creó
+      expect(await page.evaluate(() => localStorage.getItem('user'))).not.toBeNull(); // la sesión sí se creó
       await page.evaluate(() => localStorage.clear());
+      await page.context().clearCookies();
     }
+  });
+
+  test('la sesión es una cookie HttpOnly y no hay token legible desde JS', async ({ page }) => {
+    const { email, password } = await registerViaApi(page);
+    await page.context().clearCookies();
+    await page.goto('/login');
+    await page.getByLabel('Correo').fill(email);
+    await page.getByLabel('Contraseña').fill(password);
+    await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+    await expect(page).not.toHaveURL(/\/login/);
+    const session = (await page.context().cookies()).find((c) => c.name.endsWith('-session'));
+    expect(session?.httpOnly).toBe(true);
+    expect(await page.evaluate(() => document.cookie)).not.toContain('-session=');
+    expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull();
+    // Con la cookie, la API reconoce la sesión sin ninguna cabecera Authorization (un 401 mandaría a /login).
+    await page.goto('/pedidos');
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/pedidos$/);
   });
 
   test('la búsqueda refleja texto sin ejecutar HTML', async ({ page }) => {
@@ -35,15 +63,16 @@ test.describe('Hardening', () => {
   });
 
   test('las credenciales solo viajan a la API y no hay llamadas a terceros', async ({ page }) => {
-    const { token } = await registerViaApi(page);
-    await page.addInitScript((t) => localStorage.setItem('token', JSON.stringify(t)), token);
+    const { user } = await registerViaApi(page);
+    await page.addInitScript((u) => localStorage.setItem('user', JSON.stringify(u)), user);
     const leaks: string[] = [];
     const thirdParty: string[] = [];
     page.on('request', (req) => {
       const url = new URL(req.url());
       const external = url.hostname !== 'localhost' && url.hostname !== '127.0.0.1';
       if (external) thirdParty.push(req.url());
-      if (req.headers()['authorization'] && !req.url().startsWith(API)) leaks.push(req.url());
+      const h = req.headers();
+      if ((h['x-xsrf-token'] || h['x-cart-token'] || h['authorization']) && !req.url().startsWith(API)) leaks.push(req.url());
     });
     await page.goto('/');
     await page.goto('/productos');
@@ -54,11 +83,8 @@ test.describe('Hardening', () => {
   });
 
   test('un rol manipulado en localStorage no abre el panel admin', async ({ page }) => {
-    const { token } = await registerViaApi(page);
-    await page.addInitScript((t) => {
-      localStorage.setItem('token', JSON.stringify(t));
-      localStorage.setItem('user', JSON.stringify({ id: 1, name: 'Falso', email: 'falso@test.co', role: 'admin' }));
-    }, token);
+    const { user } = await registerViaApi(page); // sesión real de cliente en la cookie
+    await page.addInitScript((u) => localStorage.setItem('user', JSON.stringify({ ...u, role: 'admin' })), user);
     await page.goto('/admin/pedidos');
     await expect(page).toHaveURL(/^http:\/\/localhost:4200\/$/);
     await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
@@ -80,13 +106,13 @@ test.describe('Hardening', () => {
     await expect(page.locator('meta[name="referrer"]')).toHaveAttribute('content', 'strict-origin-when-cross-origin');
   });
 
-  test('un 401 con token vencido limpia la sesión y lleva a login', async ({ page }) => {
+  test('un 401 con sesión vencida limpia el usuario cacheado y lleva a login', async ({ page }) => {
+    // Usuario cacheado pero sin cookie de sesión: /auth/me responde 401.
     await page.addInitScript(() => {
-      localStorage.setItem('token', JSON.stringify('1|token-vencido-o-inventado-1234567890'));
       localStorage.setItem('user', JSON.stringify({ id: 99, name: 'X', email: 'x@test.co', role: 'customer' }));
     });
     await page.goto('/pedidos');
     await expect(page).toHaveURL(/\/login/);
-    expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('user'))).toBeNull();
   });
 });
