@@ -4,16 +4,19 @@ import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { safeGatewayUrl } from '../../core/safe-url';
 import { AuthService } from '../../core/auth.service';
 import { Invoice, Order, Payment } from '../../core/models';
+import { openBlob } from '../../core/safe-url';
 import { CopPipe, ORDER_STATUS, PAYMENT_STATUS, ToastService, errorMessage, uuid } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-order-detail',
   imports: [RouterLink, FormsModule, CopPipe, DatePipe],
   template: `
     @if (order(); as o) {
-      <p><a routerLink="/pedidos">Mis pedidos</a></p>
+      <p class="small"><a routerLink="/pedidos">← Mis pedidos</a></p>
       <div class="page-head">
         <div>
           <h1>Pedido #{{ o.id }}</h1>
@@ -30,6 +33,17 @@ import { CopPipe, ORDER_STATUS, PAYMENT_STATUS, ToastService, errorMessage, uuid
         </div>
       </div>
 
+      @if (o.status !== 'cancelled') {
+        <ol class="timeline" aria-label="Estado del pedido">
+          @for (s of steps(o); track s.key) {
+            <li [class.done]="s.done" [class.current]="s.current">
+              <span class="dot"></span>
+              <span class="lbl">{{ s.label }}</span>
+              @if (s.date) { <span class="muted small">{{ s.date | date: 'd MMM, h:mm a' }}</span> }
+            </li>
+          }
+        </ol>
+      }
       @if (o.status === 'pending') {
         <div class="alert alert-info">Tu pedido está reservado. Si no se paga en 30 minutos se cancela y las unidades vuelven a la tienda.</div>
       }
@@ -37,7 +51,7 @@ import { CopPipe, ORDER_STATUS, PAYMENT_STATUS, ToastService, errorMessage, uuid
         <div class="card" style="margin-bottom:1.5rem">
           <h2>Devolución</h2>
           <p class="muted">Cuéntanos qué pasó. Revisamos la solicitud y te avisamos por correo.</p>
-          <textarea rows="3" [(ngModel)]="reason" placeholder="Motivo"></textarea>
+          <textarea rows="3" [(ngModel)]="reason" placeholder="Motivo" maxlength="500"></textarea>
           <div class="row" style="margin-top:0.75rem">
             <button type="button" class="btn btn-solid" (click)="requestReturn()" [disabled]="!reason.trim() || busy()">Enviar solicitud</button>
             <button type="button" class="btn btn-ghost" (click)="returnOpen.set(false)">Cancelar</button>
@@ -94,14 +108,22 @@ import { CopPipe, ORDER_STATUS, PAYMENT_STATUS, ToastService, errorMessage, uuid
           </dl>
         </aside>
       </div>
-    } @else { <p class="muted">Cargando…</p> }
+    } @else { <div class="stack" aria-busy="true"><div class="sk sk-text" style="width:30%;height:1.6em"></div><div class="sk" style="height:12rem"></div></div> }
   `,
   styles: `
-    .sum { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem 1rem; margin: 0; }
-    .sum dd { margin: 0; text-align: right; }
-    .big { font-weight: 700; border-top: 1px solid var(--line); padding-top: 0.5rem; }
-    .small { font-size: 0.8125rem; }
+    .sum { margin: 0; }
     h3 { margin-top: 0.5rem; }
+    .timeline { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; position: relative; }
+    .timeline::before { content: ''; position: absolute; left: 12.5%; right: 12.5%; top: 0.5rem; height: 1px; background: var(--line-2); }
+    .timeline li { display: grid; justify-items: center; gap: 0.35rem; text-align: center; position: relative; color: var(--ink-3); }
+    .timeline .dot { width: 1.0714rem; height: 1.0714rem; border-radius: 999px; background: var(--paper); border: 1px solid var(--line-2); }
+    .timeline li.done { color: var(--ink); }
+    .timeline li.done .dot { background: var(--ink); border-color: var(--ink); }
+    .timeline li.current .lbl { font-weight: 600; }
+    .timeline li.current .dot { box-shadow: 0 0 0 3px var(--paper), 0 0 0 4px var(--ink); }
+    .timeline li.refund .dot { background: var(--alert); border-color: var(--alert); }
+    @media (max-width: 640px) { .timeline .small { display: none; } }
+    .card table { margin: -0.5rem 0; }
   `,
 })
 export class OrderDetail {
@@ -121,6 +143,7 @@ export class OrderDetail {
   protected pstatus = PAYMENT_STATUS;
 
   constructor() {
+    inject(PageMeta).set('Pedido');
     toObservable(this.id).subscribe(() => this.load());
   }
 
@@ -152,7 +175,7 @@ export class OrderDetail {
   }
 
   private goToPayment(p: Payment) {
-    if (p.checkout_url) { window.location.href = p.checkout_url; return; }
+    if (p.checkout_url) { this.goToGateway(p.checkout_url); return; }
     this.router.navigate(['/checkout/result'], { queryParams: { payment: p.id } });
   }
 
@@ -172,10 +195,30 @@ export class OrderDetail {
     });
   }
 
+  // Pasos del pedido. Devolución/reembolso reemplaza el último paso cuando aplica.
+  steps(o: Order) {
+    const order = ['pending', 'paid', 'shipped', 'delivered'];
+    const inReturn = o.status === 'return_requested' || o.status === 'refunded';
+    const base = inReturn ? (o.return?.refunded_at ? 'refunded' : 'return_requested') : o.status;
+    const reached = inReturn ? order.length : order.indexOf(base) + 1;
+    const dates: Record<string, string | null | undefined> = { pending: o.created_at, shipped: o.shipment?.shipped_at, delivered: o.shipment?.delivered_at };
+    const labels: Record<string, string> = { pending: 'Recibido', paid: 'Pagado', shipped: 'Enviado', delivered: 'Entregado' };
+    const steps = order.map((key, i) => ({ key, label: labels[key], done: i < reached, current: !inReturn && i === reached - 1, date: i < reached ? dates[key] : null }));
+    if (inReturn) steps.push({ key: base, label: base === 'refunded' ? 'Reembolsado' : 'Devolución en revisión', done: base === 'refunded', current: true, date: o.return?.refunded_at ?? o.return?.requested_at });
+    return steps;
+  }
+
   pdf(inv: Invoice) {
     this.api.invoicePdf(inv.id).subscribe({
-      next: (blob) => window.open(URL.createObjectURL(blob), '_blank'),
+      next: (blob) => openBlob(blob),
       error: (e) => this.toast.error(errorMessage(e)),
     });
+  }
+
+  // La URL la da nuestra API, pero solo se sigue si es https (defensa en profundidad ante una respuesta manipulada).
+  private goToGateway(url: string) {
+    const safe = safeGatewayUrl(url);
+    if (!safe) { this.busy.set(false); this.toast.error('La pasarela devolvió una dirección no válida.'); return; }
+    window.location.assign(safe);
   }
 }

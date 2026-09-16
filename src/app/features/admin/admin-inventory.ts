@@ -1,6 +1,8 @@
 import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { debounceTime, distinctUntilChanged } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../environments/environment';
 import { ApiService } from '../../core/api.service';
@@ -17,7 +19,7 @@ interface Movement { id: number; type: string; quantity: number; stock_after: nu
     <div class="page-head">
       <h1>Inventario</h1>
       <div class="row">
-        <input class="input" [(ngModel)]="q" placeholder="Producto o SKU" aria-label="Filtrar" style="width:220px" />
+        <input class="input" [ngModel]="q()" (ngModelChange)="q.set($event)" placeholder="Producto o SKU" aria-label="Filtrar" style="width:220px" />
         <label class="row" style="font-weight:400"><input type="checkbox" [(ngModel)]="lowOnly" /> Solo stock bajo</label>
       </div>
     </div>
@@ -81,7 +83,7 @@ export class AdminInventory {
   private http = inject(HttpClient);
   private toast = inject(ToastService);
 
-  protected q = '';
+  protected q = signal('');
   protected lowOnly = false;
   protected all = signal<Row[]>([]);
   protected adjusting = signal<Row | null>(null);
@@ -92,19 +94,15 @@ export class AdminInventory {
   protected note = '';
   protected types: Record<string, string> = { reserve: 'Reserva', release: 'Liberación', commit: 'Venta', adjust: 'Ajuste' };
 
-  // Filtro local: el catálogo es pequeño. Cuando crezca, mover a la API.
-  protected rows = computed(() => {
-    const q = this.q.trim().toLowerCase();
-    return this.all().filter((r) =>
-      (!this.lowOnly || this.isLow(r.variant)) &&
-      (!q || r.product.name.toLowerCase().includes(q) || r.variant.sku.toLowerCase().includes(q)),
-    );
-  });
+  // La búsqueda (nombre o SKU) la hace la API; "solo bajo stock" se filtra sobre lo recibido.
+  protected rows = computed(() => this.all().filter((r) => !this.lowOnly || this.isLow(r.variant)));
 
-  constructor() { this.load(); }
+  constructor() {
+    toObservable(this.q).pipe(debounceTime(250), distinctUntilChanged()).subscribe(() => this.load());
+  }
 
   private load() {
-    this.api.products({ per_page: 100 }).subscribe((p) => {
+    this.api.products({ q: this.q().trim() || undefined, per_page: 100 }).subscribe((p) => {
       this.all.set(p.data.flatMap((product) => (product.variants ?? []).map((variant) => ({ product, variant }))));
     });
   }

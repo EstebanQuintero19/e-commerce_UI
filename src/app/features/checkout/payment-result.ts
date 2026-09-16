@@ -2,6 +2,7 @@ import { Component, DestroyRef, computed, inject, input, signal } from '@angular
 import { toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { safeGatewayUrl } from '../../core/safe-url';
 import { Payment } from '../../core/models';
 import { CopPipe, PAYMENT_STATUS, ToastService, errorMessage } from '../../shared/ui';
 
@@ -14,7 +15,7 @@ import { CopPipe, PAYMENT_STATUS, ToastService, errorMessage } from '../../share
   selector: 'app-payment-result',
   imports: [RouterLink, CopPipe],
   template: `
-    <div class="result card">
+    <div class="result">
       @if (payment(); as p) {
         @switch (p.status) {
           @case ('succeeded') {
@@ -35,7 +36,7 @@ import { CopPipe, PAYMENT_STATUS, ToastService, errorMessage } from '../../share
               <button type="button" class="btn btn-primary" (click)="confirmFake()" [disabled]="busy()">Simular pago de {{ p.amount | cop }}</button>
             } @else {
               <p>Estamos esperando la confirmación de la pasarela. Esta página se actualiza sola.</p>
-              @if (p.checkout_url) { <a class="btn" [href]="p.checkout_url">Volver a la pasarela</a> }
+              @if (gatewayUrl(p); as url) { <a class="btn" [href]="url" rel="noopener noreferrer">Volver a la pasarela</a> }
             }
           }
           @default {
@@ -52,19 +53,22 @@ import { CopPipe, PAYMENT_STATUS, ToastService, errorMessage } from '../../share
         <p class="muted">{{ error() }}</p>
         <a class="btn" routerLink="/pedidos">Ir a mis pedidos</a>
       } @else {
-        <p class="muted">Consultando el pago…</p>
+        <div class="sk" style="height:8rem" aria-busy="true"></div>
       }
     </div>
   `,
   styles: `
     .result { max-width: 560px; margin: 2rem auto; text-align: center; }
     .result p { margin-inline: auto; }
-    .mark { width: 3.5rem; height: 3.5rem; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 1rem; font-size: 1.5rem; font-weight: 700; background: #e9ebe6; color: var(--ink-2); }
-    .mark.ok { background: var(--ok-soft); color: var(--ok); }
-    .mark.err { background: var(--err-soft); color: var(--err); }
+    .result { padding-block: 3rem; }
+    .mark { width: 3.5rem; height: 3.5rem; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 1.25rem; font-size: 1.5rem; font-weight: 600; background: var(--wash); color: var(--ink-2); }
+    .mark.ok { background: var(--ink); color: var(--paper); }
+    .mark.err { background: var(--alert-soft); color: var(--alert); }
+    @media (prefers-reduced-motion: no-preference) { .mark.ok { animation: pop 420ms var(--ease); } @keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); } } }
   `,
 })
 export class PaymentResult {
+  gatewayUrl(p: Payment) { return safeGatewayUrl(p.checkout_url); }
   private api = inject(ApiService);
   private toast = inject(ToastService);
   private destroy = inject(DestroyRef);

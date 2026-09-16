@@ -3,7 +3,9 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { Invoice } from '../../core/models';
+import { openBlob } from '../../core/safe-url';
 import { CopPipe, ToastService, errorMessage } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-invoice-list',
@@ -31,7 +33,7 @@ import { CopPipe, ToastService, errorMessage } from '../../shared/ui';
           </table>
         </div>
       }
-    } @else { <p class="muted">Cargando…</p> }
+    } @else { <div class="sk" style="height:10rem" aria-busy="true"></div> }
   `,
 })
 export class InvoiceList {
@@ -40,12 +42,13 @@ export class InvoiceList {
   protected invoices = signal<Invoice[] | null>(null);
 
   constructor() {
+    inject(PageMeta).set('Mis facturas');
     this.api.invoices().subscribe((r) => this.invoices.set(r.data));
   }
 
   pdf(i: Invoice) {
     this.api.invoicePdf(i.id).subscribe({
-      next: (blob) => window.open(URL.createObjectURL(blob), '_blank'),
+      next: (blob) => openBlob(blob),
       error: (e) => this.toast.error(errorMessage(e)),
     });
   }

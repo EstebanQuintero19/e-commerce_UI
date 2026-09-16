@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /checkout
+Disallow: /carrito
+Disallow: /cuenta
+# En producción: la URL pública del sitemap (la API lo genera en /api/v1/sitemap.xml)
+Sitemap: http://localhost:8000/api/v1/sitemap.xml

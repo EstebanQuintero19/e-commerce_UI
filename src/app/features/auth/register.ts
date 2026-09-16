@@ -2,43 +2,46 @@ import { Component, inject, input, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
+import { safeInternalPath } from '../../core/safe-url';
 import { ToastService, applyFormErrors, errorMessage, fieldError } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-register',
   imports: [ReactiveFormsModule, RouterLink],
   template: `
-    <div class="auth card">
+    <div class="auth">
       <h1>Crear cuenta</h1>
       <p class="muted">¿Ya tienes una? <a routerLink="/login" [queryParams]="{ redirect: redirect() }">Entra</a></p>
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <div class="field">
           <label for="name">Nombre</label>
-          <input id="name" class="input" formControlName="name" autocomplete="name" [class.invalid]="err('name')" />
+          <input id="name" class="input" formControlName="name" autocomplete="name" maxlength="120" [class.invalid]="err('name')" />
           @if (err('name'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
         <div class="field">
           <label for="email">Correo</label>
-          <input id="email" class="input" type="email" formControlName="email" autocomplete="email" [class.invalid]="err('email')" />
+          <input id="email" class="input" type="email" formControlName="email" autocomplete="email" maxlength="200" [class.invalid]="err('email')" />
           @if (err('email'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
         <div class="field">
           <label for="password">Contraseña (mínimo 8 caracteres)</label>
-          <input id="password" class="input" type="password" formControlName="password" autocomplete="new-password" [class.invalid]="err('password')" />
+          <input id="password" class="input" type="password" formControlName="password" autocomplete="new-password" maxlength="200" [class.invalid]="err('password')" />
           @if (err('password'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
         <div class="field">
           <label for="password2">Repite la contraseña</label>
-          <input id="password2" class="input" type="password" formControlName="password_confirmation" autocomplete="new-password" [class.invalid]="mismatch()" />
+          <input id="password2" class="input" type="password" formControlName="password_confirmation" autocomplete="new-password" maxlength="200" [class.invalid]="mismatch()" />
           @if (mismatch()) { <div class="field-error">Las contraseñas no coinciden</div> }
         </div>
         <button class="btn btn-primary btn-block" [disabled]="busy()">Crear cuenta</button>
       </form>
     </div>
   `,
-  styles: `.auth { max-width: 420px; margin: 2rem auto; }`,
+  styles: `.auth { max-width: 400px; margin: 3rem auto; } .auth h1 { margin-bottom: 0.25rem; } .auth .btn-block { margin-top: 0.5rem; }`,
 })
 export class Register {
+  constructor() { inject(PageMeta).set('Crear cuenta'); }
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
@@ -66,7 +69,7 @@ export class Register {
     this.busy.set(true);
     const v = this.form.getRawValue();
     this.auth.register(v.name, v.email, v.password, v.password_confirmation).subscribe({
-      next: () => { this.toast.ok('Cuenta creada'); this.router.navigateByUrl(this.redirect() || '/productos'); },
+      next: () => { this.toast.ok('Cuenta creada'); this.router.navigateByUrl(safeInternalPath(this.redirect(), '/productos')); },
       error: (e) => { this.busy.set(false); applyFormErrors(this.form, e) || this.toast.error(errorMessage(e)); },
     });
   }

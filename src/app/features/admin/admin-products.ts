@@ -1,12 +1,12 @@
-import { Component, inject, input, signal } from '@angular/core';
+import { computed, Component, inject, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
-import { Category, Paginated, Product, Variant } from '../../core/models';
+import { Category, Paginated, Product, Variant, Gender } from '../../core/models';
 import { CopPipe, ToastService, errorMessage } from '../../shared/ui';
 
-type ProductDraft = { name: string; category_id: number | null; description: string; is_active: boolean };
+type ProductDraft = { name: string; category_id: number | null; description: string; is_active: boolean; gender: Gender; badge: string };
 type VariantDraft = { sku: string; size: string; color: string; price: number | null; low_stock_threshold: number; is_active: boolean };
 
 // Productos, variantes e imágenes en una sola pantalla: lista con filas expandibles.
@@ -28,8 +28,14 @@ type VariantDraft = { sku: string; size: string; color: string; price: number | 
         <div class="form-row">
           <div class="field"><label>Nombre</label><input class="input" [(ngModel)]="d.name" /></div>
           <div class="field"><label>Categoría</label>
-            <select [(ngModel)]="d.category_id"><option [ngValue]="null" disabled>Elige…</option>@for (c of categories(); track c.id) { <option [ngValue]="c.id">{{ c.name }}</option> }</select>
+            <select [(ngModel)]="d.category_id"><option [ngValue]="null" disabled>Elige…</option>@for (c of categoryOptions(); track c.id) { <option [ngValue]="c.id">{{ c.label }}</option> }</select>
           </div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>Género</label>
+            <select [(ngModel)]="d.gender"><option value="unisex">Unisex (Mujer y Hombre)</option><option value="mujer">Mujer</option><option value="hombre">Hombre</option></select>
+          </div>
+          <div class="field"><label>Etiqueta (opcional: Nuevo, Oferta, Más vendido…)</label><input class="input" [(ngModel)]="d.badge" maxlength="30" /></div>
         </div>
         <div class="field"><label>Descripción</label><textarea rows="2" [(ngModel)]="d.description"></textarea></div>
         <label class="row" style="font-weight:400"><input type="checkbox" [(ngModel)]="d.is_active" /> Visible en la tienda</label>
@@ -101,14 +107,20 @@ type VariantDraft = { sku: string; size: string; color: string; price: number | 
                       <h3>Imágenes</h3>
                       <div class="imgs">
                         @for (img of prod.images; track img.id) {
-                          <figure><img [src]="img.url" alt="" /><button type="button" class="btn btn-sm btn-ghost" (click)="deleteImage(prod, img.id)">Quitar</button></figure>
+                          <figure><img [src]="img.url" alt="" />@if (img.color) { <span class="badge">{{ img.color }}</span> }<button type="button" class="btn btn-sm btn-ghost" (click)="deleteImage(prod, img.id)">Quitar</button></figure>
                         }
                       </div>
-                      <label class="btn btn-sm" style="margin-top:0.75rem">
-                        {{ uploading() ? 'Subiendo…' : 'Subir imagen' }}
-                        <input type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="upload(prod, $event)" [disabled]="uploading()" />
-                      </label>
-                      <p class="muted small">JPG, PNG o WebP, máximo 4 MB. La primera es la principal.</p>
+                      <div class="row" style="margin-top:0.75rem">
+                        <label class="btn btn-sm" style="margin:0">
+                          {{ uploading() ? 'Subiendo…' : 'Subir imagen' }}
+                          <input type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="upload(prod, $event)" [disabled]="uploading()" />
+                        </label>
+                        <select [(ngModel)]="uploadColor" style="width:auto" aria-label="Color de la foto">
+                          <option value="">Para todos los colores</option>
+                          @for (c of colorsOf(prod); track c) { <option [value]="c">Solo {{ c }}</option> }
+                        </select>
+                      </div>
+                      <p class="muted small">JPG, PNG o WebP, máximo 4 MB. La primera es la principal. Se generan tamaños para móvil automáticamente.</p>
                     </section>
                   </div>
                 </td></tr>
@@ -122,10 +134,10 @@ type VariantDraft = { sku: string; size: string; color: string; price: number | 
   styles: `
     .thumb { width: 3.5rem; }
     .thumb img, .ph { width: 2.5rem; height: 3rem; object-fit: cover; border-radius: 2px; display: block; background: #e9ebe6; }
-    .detail { background: var(--bg); }
+    .detail { background: var(--wash); }
     .detail-grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
     @media (min-width: 1000px) { .detail-grid { grid-template-columns: 2fr 1fr; } }
-    .inner { font-size: 0.875rem; background: var(--surface); }
+    .inner { font-size: 0.875rem; background: var(--paper); }
     .inner td:first-child { white-space: nowrap; }
     .vgrid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
     .imgs { display: flex; gap: 0.75rem; flex-wrap: wrap; }
@@ -142,6 +154,16 @@ export class AdminProducts {
   protected q = '';
   protected page = signal<Paginated<Product> | null>(null);
   protected categories = signal<Category[]>([]);
+  protected uploadColor = '';
+  // Solo subcategorías (o madres sin hijas): el producto vive en el nivel más específico.
+  protected categoryOptions = computed(() => {
+    const all = this.categories();
+    return all
+      .filter((c) => c.parent_id || !all.some((x) => x.parent_id === c.id))
+      .map((c) => ({ id: c.id, label: c.parent_id ? `${all.find((x) => x.id === c.parent_id)?.name} › ${c.name}` : c.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  });
+  colorsOf(p: Product) { return [...new Set((p.variants ?? []).map((v) => v.color).filter((c): c is string => !!c))]; }
   protected expanded = signal<number | null>(null);
   protected busy = signal(false);
   protected uploading = signal(false);
@@ -161,13 +183,13 @@ export class AdminProducts {
 
   minPrice(p: Product) { return p.variants?.length ? Math.min(...p.variants.map((v) => v.price)) : 0; }
 
-  openNew() { this.editing.set(null); this.draft.set({ name: '', category_id: null, description: '', is_active: true }); }
-  openEdit(p: Product) { this.editing.set(p); this.draft.set({ name: p.name, category_id: p.category?.id ?? null, description: p.description ?? '', is_active: p.is_active }); }
+  openNew() { this.editing.set(null); this.draft.set({ name: '', category_id: null, description: '', is_active: true, gender: 'unisex', badge: '' }); }
+  openEdit(p: Product) { this.editing.set(p); this.draft.set({ name: p.name, category_id: p.category?.id ?? null, description: p.description ?? '', is_active: p.is_active, gender: p.gender ?? 'unisex', badge: p.badge ?? '' }); }
 
   saveProduct() {
     const d = this.draft()!;
     this.busy.set(true);
-    this.api.saveProduct({ name: d.name, category_id: d.category_id!, description: d.description || null, is_active: d.is_active }, this.editing()?.id).subscribe({
+    this.api.saveProduct({ name: d.name, category_id: d.category_id!, description: d.description || null, is_active: d.is_active, gender: d.gender, badge: d.badge.trim() || null }, this.editing()?.id).subscribe({
       next: () => { this.busy.set(false); this.draft.set(null); this.toast.ok('Producto guardado'); this.load(); },
       error: (e) => { this.busy.set(false); this.toast.error(errorMessage(e)); },
     });
@@ -199,7 +221,7 @@ export class AdminProducts {
     const file = (ev.target as HTMLInputElement).files?.[0];
     if (!file) return;
     this.uploading.set(true);
-    this.api.uploadProductImage(p.id, file, p.images.length).subscribe({
+    this.api.uploadProductImage(p.id, file, p.images.length, this.uploadColor || null).subscribe({
       next: () => { this.uploading.set(false); this.toast.ok('Imagen subida'); this.load(); },
       error: (e) => { this.uploading.set(false); this.toast.error(errorMessage(e)); },
     });

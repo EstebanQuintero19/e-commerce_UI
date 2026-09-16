@@ -1,0 +1,33 @@
+# Ejemplo de servidor para el build de producción (dist/e-commerce_UI/browser) con la API proxied en /api.
+# Las cabeceras que no se pueden fijar en <meta> (frame-ancestors, HSTS, nosniff, permissions) van aquí.
+server {
+    listen 443 ssl http2;
+    server_name tienda.example.com;
+    root /var/www/tienda/browser;
+    index index.html;
+
+    # --- Seguridad ---
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    server_tokens off;
+
+    # --- API Laravel en el mismo origen (así connect-src 'self' basta y no hay CORS) ---
+    location /api/ {
+        proxy_pass http://api:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        client_max_body_size 5m;
+    }
+    location /storage/ { proxy_pass http://api:8000/storage/; expires 30d; }
+
+    # --- SPA ---
+    location ~* \.(js|css|woff2|webp|jpg|png|svg)$ { expires 1y; add_header Cache-Control "public, immutable"; }
+    location / { try_files $uri $uri/ /index.html; }
+    location = /index.html { add_header Cache-Control "no-cache"; }
+}

@@ -6,6 +6,7 @@ import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { Order, Paginated } from '../../core/models';
 import { CopPipe, ORDER_STATUS } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-order-list',
@@ -43,7 +44,7 @@ import { CopPipe, ORDER_STATUS } from '../../shared/ui';
           </div>
         }
       }
-    } @else { <p class="muted">Cargando…</p> }
+    } @else { <div class="sk" style="height:10rem" aria-busy="true"></div> }
   `,
   styles: `.btn.disabled { pointer-events: none; opacity: 0.4; }`,
 })
@@ -54,6 +55,7 @@ export class OrderList {
   protected status = ORDER_STATUS;
 
   constructor() {
+    inject(PageMeta).set('Mis pedidos');
     toObservable(this.page_).pipe(switchMap((page) => this.api.orders({ page: Number(page ?? 1) }))).subscribe((p) => this.page.set(p));
   }
 }

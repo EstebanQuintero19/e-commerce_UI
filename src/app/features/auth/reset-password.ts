@@ -9,7 +9,7 @@ import { ToastService, applyFormErrors, errorMessage, fieldError } from '../../s
   selector: 'app-reset-password',
   imports: [ReactiveFormsModule, RouterLink],
   template: `
-    <div class="auth card">
+    <div class="auth">
       <h1>Nueva contraseña</h1>
       @if (!token() || !email()) {
         <div class="alert alert-err">El enlace está incompleto. Pide uno nuevo desde <a routerLink="/login">Entrar</a>.</div>

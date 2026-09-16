@@ -4,7 +4,7 @@ import { ApiService } from '../core/api.service';
 import { Address, AddressInput } from '../core/models';
 import { ToastService, applyFormErrors, errorMessage, fieldError } from './ui';
 
-const STATES = [
+export const STATES = [
   'Amazonas', 'Antioquia', 'Arauca', 'Atlántico', 'Bolívar', 'Boyacá', 'Caldas', 'Caquetá', 'Casanare', 'Cauca', 'Cesar', 'Chocó',
   'Córdoba', 'Cundinamarca', 'Guainía', 'Guaviare', 'Huila', 'La Guajira', 'Magdalena', 'Meta', 'Nariño', 'Norte de Santander',
   'Putumayo', 'Quindío', 'Risaralda', 'San Andrés y Providencia', 'Santander', 'Sucre', 'Tolima', 'Valle del Cauca', 'Vaupés', 'Vichada',
@@ -19,28 +19,28 @@ const STATES = [
       <div class="form-row">
         <div class="field">
           <label for="recipient">Quién recibe</label>
-          <input id="recipient" class="input" formControlName="recipient" [class.invalid]="err('recipient')" />
+          <input id="recipient" class="input" formControlName="recipient" maxlength="120" autocomplete="name" [class.invalid]="err('recipient')" />
           @if (err('recipient'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
         <div class="field">
           <label for="phone">Teléfono</label>
-          <input id="phone" class="input" formControlName="phone" inputmode="tel" [class.invalid]="err('phone')" />
+          <input id="phone" class="input" formControlName="phone" inputmode="tel" maxlength="30" autocomplete="tel" [class.invalid]="err('phone')" />
           @if (err('phone'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
       </div>
       <div class="field">
         <label for="line1">Dirección</label>
-        <input id="line1" class="input" formControlName="line1" placeholder="Calle 10 # 20-30" [class.invalid]="err('line1')" />
+        <input id="line1" class="input" formControlName="line1" placeholder="Calle 10 # 20-30" maxlength="160" autocomplete="address-line1" [class.invalid]="err('line1')" />
         @if (err('line1'); as e) { <div class="field-error">{{ e }}</div> }
       </div>
       <div class="field">
         <label for="line2">Apartamento, torre, referencia (opcional)</label>
-        <input id="line2" class="input" formControlName="line2" />
+        <input id="line2" class="input" formControlName="line2" maxlength="160" autocomplete="address-line2" />
       </div>
       <div class="form-row">
         <div class="field">
           <label for="city">Ciudad</label>
-          <input id="city" class="input" formControlName="city" [class.invalid]="err('city')" />
+          <input id="city" class="input" formControlName="city" maxlength="80" autocomplete="address-level2" [class.invalid]="err('city')" />
           @if (err('city'); as e) { <div class="field-error">{{ e }}</div> }
         </div>
         <div class="field">

@@ -6,6 +6,7 @@ import { AuthService } from '../../core/auth.service';
 import { Address } from '../../core/models';
 import { AddressForm } from '../../shared/address-form';
 import { ToastService, applyFormErrors, errorMessage, fieldError } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-addresses',
@@ -59,7 +60,7 @@ import { ToastService, applyFormErrors, errorMessage, fieldError } from '../../s
   styles: `
     .grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
     @media (min-width: 800px) { .grid { grid-template-columns: 1fr 1fr; } .wide { grid-column: 1 / -1; } }
-    .addr { padding: 0.75rem; border: 1px solid var(--line); border-radius: var(--radius); }
+    .addr { padding: 0.75rem; border: 1px solid var(--line);  }
     .small { font-size: 0.8125rem; }
   `,
 })
@@ -85,6 +86,7 @@ export class Addresses {
   });
 
   constructor() {
+    inject(PageMeta).set('Mi cuenta');
     this.api.addresses().subscribe((l) => this.addresses.set(l));
   }
 

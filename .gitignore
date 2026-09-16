@@ -57,3 +57,7 @@ AGENTS.md
 .aider*
 .windsurfrules
 .codex/
+
+# Playwright
+/test-results
+/playwright-report

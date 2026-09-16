@@ -3,20 +3,23 @@ import { toObservable } from '@angular/core/rxjs-interop';
 import { of, switchMap } from 'rxjs';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { safeGatewayUrl } from '../../core/safe-url';
 import { CartStore } from '../../core/cart.store';
 import { Address, ShippingQuote } from '../../core/models';
 import { AddressForm } from '../../shared/address-form';
+import { ProductImageComponent } from '../../shared/product-image';
 import { CopPipe, ToastService, errorMessage, uuid } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 // Una sola pantalla: dirección → resumen con envío → "Confirmar y pagar".
 // Crea la orden, inicia el pago y va a /checkout/result (fake) o redirige a la pasarela (Mercado Pago).
 @Component({
   selector: 'app-checkout',
-  imports: [RouterLink, AddressForm, CopPipe],
+  imports: [RouterLink, AddressForm, CopPipe, ProductImageComponent],
   template: `
     <div class="page-head"><h1>Finalizar compra</h1></div>
     @if (store.cart(); as cart) {
-      @if (cart.items.length === 0) {
+      @if (cart.items.length === 0 && !busy()) {
         <div class="empty"><h2>No hay nada que pagar</h2><a class="btn btn-solid" routerLink="/productos">Ir a la tienda</a></div>
       } @else {
         <div class="two-col">
@@ -43,17 +46,19 @@ import { CopPipe, ToastService, errorMessage, uuid } from '../../shared/ui';
 
             <div class="card">
               <h2>Tu pedido</h2>
-              <table>
-                <tbody>
-                  @for (i of cart.items; track i.id) {
-                    <tr><td>{{ i.name }} <span class="muted">× {{ i.quantity }}</span></td><td class="num">{{ i.line_total | cop }}</td></tr>
-                  }
-                </tbody>
-              </table>
+              <ul class="lines">
+                @for (i of cart.items; track i.id) {
+                  <li>
+                    <app-product-image [src]="i.image" [name]="i.product_name" [category]="i.category" [color]="i.color" />
+                    <span>{{ i.product_name }}<br /><span class="muted small">{{ [i.color, i.size].join(' · ') }} · × {{ i.quantity }}</span></span>
+                    <span class="num">{{ i.line_total | cop }}</span>
+                  </li>
+                }
+              </ul>
             </div>
           </section>
 
-          <aside class="card sticky">
+          <aside class="summary sticky">
             <h2>Total</h2>
             <dl class="sum">
               <dt>Subtotal</dt><dd class="num">{{ cart.subtotal | cop }}</dd>
@@ -77,13 +82,13 @@ import { CopPipe, ToastService, errorMessage, uuid } from '../../shared/ui';
     }
   `,
   styles: `
-    .addr { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.75rem; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-weight: 400; }
-    .addr.on { border-color: var(--indigo); background: #f4f5f9; }
-    .addr input { margin-top: 0.3rem; }
-    .sum { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem 1rem; margin: 0 0 1rem; }
-    .sum dd { margin: 0; text-align: right; }
-    .big { font-weight: 700; font-size: 1.125rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
-    .small { font-size: 0.8125rem; }
+    .addr { display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.8571rem; border: 1px solid var(--line-2); cursor: pointer; color: var(--ink); font-size: 1rem; transition: border-color var(--t) var(--ease); }
+    .addr:hover { border-color: var(--ink); }
+    .addr.on { border-color: var(--ink); background: var(--wash); }
+    .addr input { margin-top: 0.3rem; accent-color: var(--ink); }
+    .summary { background: var(--wash); padding: 1.4286rem; }
+    .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+    .lines li { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.75rem; align-items: center; }
   `,
 })
 export class Checkout {
@@ -99,6 +104,7 @@ export class Checkout {
   protected busy = signal(false);
 
   constructor() {
+    inject(PageMeta).set('Finalizar compra');
     this.store.refresh();
     this.api.addresses().subscribe((list) => {
       this.addresses.set(list);
@@ -123,16 +129,24 @@ export class Checkout {
     this.busy.set(true);
     this.api.placeOrder(this.selected()!.id).subscribe({
       next: (order) => {
-        this.store.refresh();
+        // El carrito ya se vació en el backend; se refresca al llegar al resultado para no mostrar "nada que pagar" aquí.
         this.api.pay(order.id, uuid()).subscribe({
           next: (payment) => {
-            if (payment.checkout_url) { window.location.href = payment.checkout_url; return; }
+            if (payment.checkout_url) { this.goToGateway(payment.checkout_url); return; }
+            this.store.refresh();
             this.router.navigate(['/checkout/result'], { queryParams: { payment: payment.id } });
           },
-          error: (e) => { this.busy.set(false); this.toast.error(errorMessage(e)); this.router.navigate(['/pedidos', order.id]); },
+          error: (e) => { this.busy.set(false); this.store.refresh(); this.toast.error(errorMessage(e)); this.router.navigate(['/pedidos', order.id]); },
         });
       },
       error: (e) => { this.busy.set(false); this.toast.error(errorMessage(e)); this.store.refresh(); },
     });
+  }
+
+  // La URL la da nuestra API, pero solo se sigue si es https (defensa en profundidad ante una respuesta manipulada).
+  private goToGateway(url: string) {
+    const safe = safeGatewayUrl(url);
+    if (!safe) { this.busy.set(false); this.toast.error('La pasarela devolvió una dirección no válida.'); return; }
+    window.location.assign(safe);
   }
 }

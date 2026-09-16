@@ -7,18 +7,19 @@ export const routes: Routes = [
     path: '',
     component: Shell,
     children: [
-      { path: '', redirectTo: 'productos', pathMatch: 'full' },
+      { path: '', pathMatch: 'full', loadComponent: () => import('./features/home/home').then((m) => m.Home) },
       { path: 'productos', loadComponent: () => import('./features/catalog/product-list').then((m) => m.ProductList) },
       { path: 'productos/:id', loadComponent: () => import('./features/catalog/product-detail').then((m) => m.ProductDetail) },
       { path: 'login', loadComponent: () => import('./features/auth/login').then((m) => m.Login) },
       { path: 'registro', loadComponent: () => import('./features/auth/register').then((m) => m.Register) },
       // Enlace del correo de recuperación: ?token=&email=
       { path: 'reset-password', loadComponent: () => import('./features/auth/reset-password').then((m) => m.ResetPassword) },
+      { path: 'carrito', loadComponent: () => import('./features/cart/cart').then((m) => m.Cart) },
+      { path: 'favoritos', loadComponent: () => import('./features/favorites/favorites').then((m) => m.Favorites) },
       {
         path: '',
         canActivate: [authGuard],
         children: [
-          { path: 'carrito', loadComponent: () => import('./features/cart/cart').then((m) => m.Cart) },
           { path: 'checkout', loadComponent: () => import('./features/checkout/checkout').then((m) => m.Checkout) },
           // Aquí vuelve el cliente desde la pasarela (MP_BACK_URL). Con el driver fake se llega desde el checkout.
           { path: 'checkout/result', loadComponent: () => import('./features/checkout/payment-result').then((m) => m.PaymentResult) },
@@ -38,6 +39,8 @@ export const routes: Routes = [
           { path: 'productos', loadComponent: () => import('./features/admin/admin-products').then((m) => m.AdminProducts) },
           { path: 'inventario', loadComponent: () => import('./features/admin/admin-inventory').then((m) => m.AdminInventory) },
           { path: 'cupones', loadComponent: () => import('./features/admin/admin-coupons').then((m) => m.AdminCoupons) },
+          { path: 'categorias', loadComponent: () => import('./features/admin/admin-categories').then((m) => m.AdminCategories) },
+          { path: 'envios', loadComponent: () => import('./features/admin/admin-shipping').then((m) => m.AdminShipping) },
         ],
       },
     ],

@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { tap } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { rotateGuestCartToken } from './guest';
 import { AuthToken, User, Wrapped } from './models';
 
 const TOKEN_KEY = 'token';
@@ -11,8 +12,8 @@ const USER_KEY = 'user';
 export class AuthService {
   private http = inject(HttpClient);
 
-  readonly user = signal<User | null>(this.read<User>(USER_KEY));
-  readonly token = signal<string | null>(this.read<string>(TOKEN_KEY));
+  readonly user = signal<User | null>(validUser(this.read<unknown>(USER_KEY)));
+  readonly token = signal<string | null>(validToken(this.read<unknown>(TOKEN_KEY)));
   readonly isLoggedIn = computed(() => this.token() !== null);
   readonly isAdmin = computed(() => this.user()?.role === 'admin');
 
@@ -43,6 +44,7 @@ export class AuthService {
   }
 
   private store(r: AuthToken) {
+    rotateGuestCartToken(); // el backend ya fusionó el carrito de invitado en la cuenta
     this.token.set(r.token);
     this.user.set(r.user);
     localStorage.setItem(TOKEN_KEY, JSON.stringify(r.token));
@@ -57,4 +59,16 @@ export class AuthService {
       return null;
     }
   }
+}
+
+// Lo guardado en localStorage lo pudo tocar cualquiera con acceso al navegador: se valida la forma y el rol se
+// confirma con /auth/me al arrancar (app.ts). El backend es quien autoriza; esto solo evita UI incoherente.
+function validUser(v: unknown): User | null {
+  if (!v || typeof v !== 'object') return null;
+  const u = v as Record<string, unknown>;
+  if (typeof u['id'] !== 'number' || typeof u['name'] !== 'string' || typeof u['email'] !== 'string') return null;
+  return { id: u['id'], name: u['name'].slice(0, 120), email: u['email'].slice(0, 200), role: u['role'] === 'admin' ? 'admin' : 'customer' };
+}
+function validToken(v: unknown): string | null {
+  return typeof v === 'string' && /^[\w|.-]{20,200}$/.test(v) ? v : null;
 }

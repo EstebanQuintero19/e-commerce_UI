@@ -4,15 +4,17 @@ export type Role = 'customer' | 'admin';
 export interface User { id: number; name: string; email: string; role: Role; }
 export interface AuthToken { token: string; user: User; }
 
-export interface Category { id: number; name: string; slug: string; is_active: boolean; }
+export interface Category { id: number; name: string; slug: string; is_active: boolean; parent_id: number | null; }
 export interface Variant {
   id: number; product_id: number; sku: string; size: string | null; color: string | null;
   price: number; available: number; is_active: boolean;
   stock?: number; reserved?: number; low_stock_threshold?: number; // solo admin
 }
-export interface ProductImage { id: number; url: string; }
+export interface ProductImage { id: number; url: string; srcset: string | null; color: string | null; }
+export type Gender = 'mujer' | 'hombre' | 'unisex';
 export interface Product {
   id: number; name: string; slug: string; description: string | null; is_active: boolean;
+  gender: Gender; badge: string | null; created_at: string; is_favorite?: boolean; min_price?: number;
   image: string | null; images: ProductImage[];
   category?: Category; variants?: Variant[];
 }
@@ -25,6 +27,7 @@ export interface Address extends AddressInput { id: number; }
 
 export interface CartItem {
   id: number; variant_id: number; product_id: number; sku: string; name: string;
+  product_name: string; size: string | null; color: string | null; category: string | null; image: string | null;
   unit_price: number; quantity: number; available: number; is_available: boolean; line_total: number;
 }
 export interface CartCoupon { code: string; discount: number; error: string | null; }
@@ -34,6 +37,10 @@ export interface Cart {
   shipping_free_from: number; can_checkout: boolean;
 }
 export interface ShippingQuote { shipping_cost: number; free_from: number; total: number; }
+export interface ShippingSettings { default: number; free_from: number; rates: { state: string; cost: number }[]; }
+export interface ProductFilters { sizes: string[]; colors: string[]; price_min: number; price_max: number; }
+export type ProductSort = 'newest' | 'price_asc' | 'price_desc' | 'name';
+export interface ProductQuery { q?: string; category_id?: number; gender?: string; badge?: string; size?: string; color?: string; price_min?: number; price_max?: number; sort?: ProductSort; page?: number; per_page?: number; }
 
 export type CouponType = 'percent' | 'fixed';
 export interface CouponInput {

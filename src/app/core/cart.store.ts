@@ -4,7 +4,8 @@ import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
 import { Cart } from './models';
 
-// Carrito en memoria para el contador de la cabecera y las pantallas; cada operación de la API lo reemplaza entero.
+// Bolsa en memoria para el contador de la cabecera y las pantallas; cada operación de la API la reemplaza entera.
+// Funciona con sesión o como invitado (X-Cart-Token en el interceptor).
 @Injectable({ providedIn: 'root' })
 export class CartStore {
   private api = inject(ApiService);
@@ -12,9 +13,14 @@ export class CartStore {
 
   readonly cart = signal<Cart | null>(null);
   readonly count = computed(() => this.cart()?.items.reduce((n, i) => n + i.quantity, 0) ?? 0);
+  // Se abre al agregar; lo cierra el cliente.
+  readonly drawerOpen = signal(false);
 
   constructor() {
-    toObservable(this.auth.isLoggedIn).subscribe((logged) => (logged ? this.refresh() : this.cart.set(null)));
+    toObservable(this.auth.isLoggedIn).subscribe(() => {
+      this.api.invalidateCatalog(); // admin ve stock e inactivos: lo cacheado como anónimo no sirve
+      this.refresh();
+    });
   }
 
   refresh() {

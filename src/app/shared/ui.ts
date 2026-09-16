@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, Pipe, PipeTransform, signal } from '@angular/core';
 import { FormGroup } from '@angular/forms';
-import { OrderStatus, PaymentStatus } from '../core/models';
+import { Gender, OrderStatus, PaymentStatus } from '../core/models';
 
 // ---- Moneda COP sin decimales: "$ 49.900" ----
 const cop = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -35,7 +35,10 @@ export function errorMessage(err: unknown, fallback = 'Algo salió mal. Intenta 
   if (err instanceof HttpErrorResponse) {
     if (err.status === 0) return 'No hay conexión con el servidor.';
     if (err.status === 422 && err.error?.errors) return Object.values<string[]>(err.error.errors)[0]?.[0] ?? fallback;
-    return err.error?.message ?? fallback;
+    if (err.status >= 500) return 'El servidor tuvo un problema. Intenta de nuevo en un momento.';
+    if (err.status === 429) return 'Demasiados intentos. Espera un momento y vuelve a intentarlo.';
+    const msg = err.error?.message;
+    return typeof msg === 'string' && msg.length <= 300 ? msg : fallback;
   }
   return fallback;
 }
@@ -61,6 +64,8 @@ export function fieldError(form: FormGroup, name: string): string | null {
   return 'Revisa este campo';
 }
 
+export const GENDER_LABEL: Record<Gender, string> = { mujer: 'Mujer', hombre: 'Hombre', unisex: 'Unisex' };
+
 // ---- Etiquetas de estado en español ----
 export const ORDER_STATUS: Record<OrderStatus, { label: string; badge: string }> = {
   pending: { label: 'Pendiente de pago', badge: 'badge-warn' },
@@ -81,5 +86,9 @@ export const PAYMENT_STATUS: Record<PaymentStatus, { label: string; badge: strin
 };
 
 export function uuid(): string {
-  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }

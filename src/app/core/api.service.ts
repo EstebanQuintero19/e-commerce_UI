@@ -1,10 +1,10 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { map } from 'rxjs';
+import { Observable, map, shareReplay, tap } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   Address, AddressInput, Cart, Category, Coupon, CouponInput, Invoice, Order, OrderStatus, Paginated, Payment, Product,
-  ShippingQuote, User, Variant, Wrapped,
+  ProductFilters, ProductQuery, ShippingQuote, ShippingSettings, User, Variant, Wrapped,
 } from './models';
 
 // Un método por endpoint del backend. Devuelve `data` ya desenvuelto, salvo en listados paginados (traen `meta`).
@@ -14,14 +14,42 @@ export class ApiService {
   private base = environment.apiUrl;
 
   // ---- Catalog (público) ----
-  categories() {
-    return this.http.get<Wrapped<Category[]>>(`${this.base}/categories`).pipe(map((r) => r.data));
+  // Caché corta en memoria: volver atrás o repetir una búsqueda no vuelve a pedir la página. Las escrituras de admin la vacían.
+  private catalogCache = new Map<string, { at: number; obs: Observable<unknown> }>();
+  private static CATALOG_TTL = 60_000;
+  private cached<T>(key: string, make: () => Observable<T>): Observable<T> {
+    const hit = this.catalogCache.get(key);
+    if (hit && Date.now() - hit.at < ApiService.CATALOG_TTL) return hit.obs as Observable<T>;
+    const obs = make().pipe(shareReplay(1));
+    this.catalogCache.set(key, { at: Date.now(), obs });
+    return obs;
   }
-  products(filters: { q?: string; category_id?: number; page?: number; per_page?: number } = {}) {
-    return this.http.get<Paginated<Product>>(`${this.base}/products`, { params: this.params(filters) });
+  invalidateCatalog() { this.catalogCache.clear(); }
+  private bust<T>(obs: Observable<T>) { return obs.pipe(tap(() => this.invalidateCatalog())); }
+
+  categories() {
+    return this.cached('categories', () => this.http.get<Wrapped<Category[]>>(`${this.base}/categories`).pipe(map((r) => r.data)));
+  }
+  products(filters: ProductQuery = {}) {
+    const params = this.params({ ...filters });
+    return this.cached(`products?${params.toString()}`, () => this.http.get<Paginated<Product>>(`${this.base}/products`, { params }));
+  }
+  productFilters() {
+    return this.cached('filters', () => this.http.get<ProductFilters>(`${this.base}/products/filters`));
   }
   product(id: number) {
-    return this.http.get<Wrapped<Product>>(`${this.base}/products/${id}`).pipe(map((r) => r.data));
+    return this.cached(`product/${id}`, () => this.http.get<Wrapped<Product>>(`${this.base}/products/${id}`).pipe(map((r) => r.data)));
+  }
+
+  // ---- Favoritos ----
+  favorites() {
+    return this.http.get<Paginated<Product>>(`${this.base}/favorites`);
+  }
+  addFavorite(productId: number) {
+    return this.http.put<void>(`${this.base}/favorites/${productId}`, {});
+  }
+  removeFavorite(productId: number) {
+    return this.http.delete<void>(`${this.base}/favorites/${productId}`);
   }
 
   // ---- Cuenta ----
@@ -148,36 +176,54 @@ export class ApiService {
     return this.http.delete<void>(`${this.base}/coupons/${id}`);
   }
 
+  // ---- Admin: envíos ----
+  shippingSettings() {
+    return this.http.get<ShippingSettings>(`${this.base}/shipping/settings`);
+  }
+  saveShippingSettings(s: ShippingSettings) {
+    return this.http.put<ShippingSettings>(`${this.base}/shipping/settings`, s);
+  }
+
   // ---- Admin: catálogo e inventario ----
   saveCategory(category: Partial<Category>, id?: number) {
-    return id
-      ? this.http.put<Wrapped<Category>>(`${this.base}/categories/${id}`, category).pipe(map((r) => r.data))
-      : this.http.post<Wrapped<Category>>(`${this.base}/categories`, category).pipe(map((r) => r.data));
+    return this.bust(
+      id
+        ? this.http.put<Wrapped<Category>>(`${this.base}/categories/${id}`, category).pipe(map((r) => r.data))
+        : this.http.post<Wrapped<Category>>(`${this.base}/categories`, category).pipe(map((r) => r.data)),
+    );
+  }
+  deleteCategory(id: number) {
+    return this.bust(this.http.delete<void>(`${this.base}/categories/${id}`));
   }
   saveProduct(product: Partial<Product> & { category_id?: number }, id?: number) {
-    return id
-      ? this.http.put<Wrapped<Product>>(`${this.base}/products/${id}`, product).pipe(map((r) => r.data))
-      : this.http.post<Wrapped<Product>>(`${this.base}/products`, product).pipe(map((r) => r.data));
+    return this.bust(
+      id
+        ? this.http.put<Wrapped<Product>>(`${this.base}/products/${id}`, product).pipe(map((r) => r.data))
+        : this.http.post<Wrapped<Product>>(`${this.base}/products`, product).pipe(map((r) => r.data)),
+    );
   }
   deleteProduct(id: number) {
-    return this.http.delete<void>(`${this.base}/products/${id}`);
+    return this.bust(this.http.delete<void>(`${this.base}/products/${id}`));
   }
   saveVariant(productId: number, variant: Partial<Variant>, id?: number) {
-    return id
-      ? this.http.put<Wrapped<Variant>>(`${this.base}/variants/${id}`, variant).pipe(map((r) => r.data))
-      : this.http.post<Wrapped<Variant>>(`${this.base}/products/${productId}/variants`, variant).pipe(map((r) => r.data));
+    return this.bust(
+      id
+        ? this.http.put<Wrapped<Variant>>(`${this.base}/variants/${id}`, variant).pipe(map((r) => r.data))
+        : this.http.post<Wrapped<Variant>>(`${this.base}/products/${productId}/variants`, variant).pipe(map((r) => r.data)),
+    );
   }
-  uploadProductImage(productId: number, file: File, position = 0) {
+  uploadProductImage(productId: number, file: File, position = 0, color: string | null = null) {
     const form = new FormData();
     form.append('image', file);
     form.append('position', String(position));
-    return this.http.post<Wrapped<Product>>(`${this.base}/products/${productId}/images`, form).pipe(map((r) => r.data));
+    if (color) form.append('color', color);
+    return this.bust(this.http.post<Wrapped<Product>>(`${this.base}/products/${productId}/images`, form).pipe(map((r) => r.data)));
   }
   deleteProductImage(imageId: number) {
-    return this.http.delete<void>(`${this.base}/product-images/${imageId}`);
+    return this.bust(this.http.delete<void>(`${this.base}/product-images/${imageId}`));
   }
   adjustStock(variantId: number, delta: number, note?: string) {
-    return this.http.post<Wrapped<Variant>>(`${this.base}/variants/${variantId}/stock/adjust`, { delta, note }).pipe(map((r) => r.data));
+    return this.bust(this.http.post<Wrapped<Variant>>(`${this.base}/variants/${variantId}/stock/adjust`, { delta, note }).pipe(map((r) => r.data)));
   }
 
   private params(obj: Record<string, unknown>): HttpParams {

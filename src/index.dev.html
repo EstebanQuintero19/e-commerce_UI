@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Mi Tienda</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- CSP de desarrollo: API en localhost:8000 y websocket del dev server. La de producción está en index.html. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:8000; font-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:4200; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="preload" href="fonts/familjen-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" as="image" href="img/hero-1024.webp" imagesrcset="img/hero-640.webp 640w, img/hero-1024.webp 1024w, img/hero-1600.webp 1600w" imagesizes="100vw" fetchpriority="high">
+  <meta name="theme-color" content="#ffffff">
+</head>
+<body>
+  <!-- Pantalla de carga: se dibuja una camiseta mientras arranca Angular; app.ts la retira al renderizar -->
+  <div id="splash" aria-hidden="true">
+    <svg viewBox="0 0 300 400" width="120" height="160">
+      <path class="stitch" d="M120 62 C135 80 165 80 180 62 L236 82 L276 142 L230 170 L216 152 L216 346 L84 346 L84 152 L70 170 L24 142 L64 82 Z" />
+      <path class="stitch neck" d="M122 64 C134 92 166 92 178 64" />
+    </svg>
+    <span>Mi Tienda</span>
+  </div>
+  <style>
+    #splash { position: fixed; inset: 0; z-index: 100; background: #fff; display: grid; place-content: center; justify-items: center; gap: 1rem; font-family: 'Familjen Grotesk', Arial, sans-serif; font-weight: 700; font-size: 1.25rem; letter-spacing: -0.04em; color: #000; transition: opacity 260ms ease-out; }
+    html.ready #splash { opacity: 0; pointer-events: none; }
+    #splash .stitch { fill: none; stroke: #000; stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 8 8; stroke-dashoffset: 0; animation: stitch 1.2s linear infinite; }
+    #splash .neck { stroke-width: 3; }
+    @keyframes stitch { to { stroke-dashoffset: -32; } }
+    @media (prefers-reduced-motion: reduce) { #splash .stitch { animation: none; stroke-dasharray: none; } }
+  </style>
+  <app-root></app-root>
+</body>
+</html>

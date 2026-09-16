@@ -5,98 +5,125 @@ import { Observable } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { CartStore } from '../../core/cart.store';
 import { Cart as CartModel, CartItem } from '../../core/models';
+import { ProductImageComponent } from '../../shared/product-image';
 import { CopPipe, ToastService, errorMessage } from '../../shared/ui';
+import { PageMeta } from '../../shared/seo';
 
 @Component({
   selector: 'app-cart',
-  imports: [RouterLink, FormsModule, CopPipe],
+  imports: [RouterLink, FormsModule, CopPipe, ProductImageComponent],
   template: `
-    <div class="page-head"><h1>Carrito</h1></div>
     @if (store.cart(); as cart) {
       @if (cart.items.length === 0) {
         <div class="empty">
-          <h2>Tu carrito está vacío</h2>
+          <h2>Tu bolsa está vacía</h2>
           <p>Lo que agregues desde la tienda aparece aquí.</p>
           <a class="btn btn-solid" routerLink="/productos">Ir a la tienda</a>
         </div>
       } @else {
+        <div class="page-head">
+          <h1>Tu bolsa <span class="muted count">{{ count(cart) }}</span></h1>
+          <button type="button" class="link-btn muted" (click)="clear()" [disabled]="busy()">Vaciar bolsa</button>
+        </div>
         <div class="two-col">
-          <section class="stack">
+          <section class="items">
             @for (item of cart.items; track item.id) {
-              <div class="card item" [class.off]="!item.is_available">
-                <div>
-                  <a [routerLink]="['/productos', item.product_id]" class="name">{{ item.name }}</a>
-                  <div class="muted small">{{ item.sku }} · {{ item.unit_price | cop }} c/u</div>
+              <article class="item" [class.off]="!item.is_available">
+                <a [routerLink]="['/productos', item.product_id]" class="thumb">
+                  <app-product-image [src]="item.image" [name]="item.product_name" [category]="item.category" [color]="item.color" />
+                </a>
+                <div class="info">
+                  <a [routerLink]="['/productos', item.product_id]" class="name">{{ item.product_name }}</a>
+                  <div class="muted small">{{ [item.color, item.size].join(' · ') }}</div>
+                  <div class="price">{{ item.unit_price | cop }}</div>
                   @if (!item.is_available) {
                     <div class="field-error">
                       @if (item.available === 0) { Sin unidades disponibles } @else { Solo quedan {{ item.available }}: baja la cantidad }
                     </div>
                   }
+                  <div class="controls">
+                    <div class="qty">
+                      <button type="button" (click)="setQty(item, item.quantity - 1)" [disabled]="busy()" aria-label="Menos">−</button>
+                      <span>{{ item.quantity }}</span>
+                      <button type="button" (click)="setQty(item, item.quantity + 1)" [disabled]="busy() || item.quantity >= item.available" aria-label="Más">+</button>
+                    </div>
+                    <button type="button" class="link-btn muted" (click)="remove(item)" [disabled]="busy()">Quitar</button>
+                  </div>
                 </div>
-                <div class="qty">
-                  <button type="button" (click)="setQty(item, item.quantity - 1)" [disabled]="busy()" aria-label="Menos">−</button>
-                  <span>{{ item.quantity }}</span>
-                  <button type="button" (click)="setQty(item, item.quantity + 1)" [disabled]="busy() || item.quantity >= item.available" aria-label="Más">+</button>
-                </div>
-                <div class="num total">{{ item.line_total | cop }}</div>
-                <button type="button" class="btn btn-ghost btn-sm" (click)="remove(item)" [disabled]="busy()">Quitar</button>
-              </div>
+                <div class="num line">{{ item.line_total | cop }}</div>
+              </article>
             }
-            <div><button type="button" class="btn btn-ghost btn-sm" (click)="clear()" [disabled]="busy()">Vaciar carrito</button></div>
           </section>
 
-          <aside class="card sticky">
+          <aside class="summary sticky">
             <h2>Resumen</h2>
-            <form class="row" (ngSubmit)="applyCoupon()" style="margin-bottom:1rem">
+            <form class="coupon" (ngSubmit)="applyCoupon()">
               @if (cart.coupon; as c) {
-                <span class="badge badge-ok">{{ c.code }}</span>
-                @if (c.error) { <span class="field-error" style="margin:0">{{ c.error }}</span> }
-                <button type="button" class="btn btn-ghost btn-sm" (click)="removeCoupon()">Quitar</button>
+                <div class="coupon-on">
+                  <span>Cupón <strong>{{ c.code }}</strong></span>
+                  <button type="button" class="link-btn muted" (click)="removeCoupon()">Quitar</button>
+                </div>
+                @if (c.error) { <div class="field-error">{{ c.error }}</div> }
               } @else {
-                <input class="input" style="flex:1" name="code" [(ngModel)]="code" placeholder="Cupón" aria-label="Código de cupón" />
-                <button class="btn btn-sm" [disabled]="!code || busy()">Aplicar</button>
+                <input class="input" name="code" [(ngModel)]="code" placeholder="Código de cupón" maxlength="30" autocomplete="off" aria-label="Código de cupón" />
+                <button class="btn" [disabled]="!code || busy()">Aplicar</button>
               }
             </form>
             <dl class="sum">
-              <dt>Subtotal</dt><dd class="num">{{ cart.subtotal | cop }}</dd>
-              @if (cart.discount) { <dt>Descuento</dt><dd class="num">−{{ cart.discount | cop }}</dd> }
-              <dt>IVA</dt><dd class="num">{{ cart.tax | cop }}</dd>
-              <dt>Envío</dt><dd class="muted small">se calcula con tu dirección</dd>
-              <dt class="big">Total</dt><dd class="num big">{{ cart.total | cop }}</dd>
+              <dt>Subtotal</dt><dd>{{ cart.subtotal | cop }}</dd>
+              @if (cart.discount) { <dt>Descuento</dt><dd>−{{ cart.discount | cop }}</dd> }
+              <dt>IVA</dt><dd>{{ cart.tax | cop }}</dd>
+              <dt>Envío</dt><dd class="muted">según tu dirección</dd>
+              <dt class="big">Total</dt><dd class="big">{{ cart.total | cop }}</dd>
             </dl>
             @if (cart.subtotal - cart.discount < cart.shipping_free_from) {
-              <p class="muted small">Envío gratis desde {{ cart.shipping_free_from | cop }}.</p>
+              <p class="muted small">Te faltan {{ cart.shipping_free_from - (cart.subtotal - cart.discount) | cop }} para envío gratis.</p>
             } @else {
-              <p class="small" style="color:var(--ok)">Tu pedido tiene envío gratis.</p>
+              <p class="small ok">Tu pedido tiene envío gratis.</p>
             }
-            <a class="btn btn-primary btn-block" routerLink="/checkout" [class.disabled]="!cart.can_checkout" [attr.aria-disabled]="!cart.can_checkout">Ir a pagar</a>
+            <a class="btn btn-primary btn-block" routerLink="/checkout" [class.disabled]="!cart.can_checkout" [attr.aria-disabled]="!cart.can_checkout">Continuar al pago</a>
             @if (!cart.can_checkout) { <p class="field-error">Revisa los productos marcados antes de continuar.</p> }
           </aside>
         </div>
       }
     } @else {
-      <p class="muted">Cargando…</p>
+      <div class="two-col" aria-busy="true">
+        <div class="stack"><div class="sk" style="height:8rem"></div><div class="sk" style="height:8rem"></div></div>
+        <div class="sk" style="height:16rem"></div>
+      </div>
     }
   `,
   styles: `
-    .item { display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem; align-items: center; }
-    .item.off { border-color: #f1c4bf; }
-    .name { color: inherit; font-weight: 500; }
-    .small { font-size: 0.8125rem; }
-    .total { font-weight: 500; min-width: 6.5rem; text-align: right; }
-    .sum { display: grid; grid-template-columns: 1fr auto; gap: 0.4rem 1rem; margin: 0 0 1rem; }
-    .sum dd { margin: 0; text-align: right; }
-    .big { font-weight: 700; font-size: 1.125rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
-    .btn.disabled { pointer-events: none; opacity: 0.45; }
-    @media (max-width: 640px) { .item { grid-template-columns: 1fr auto; } .total { grid-column: 1; text-align: left; } }
+    .count { font-weight: 400; font-size: 0.6em; margin-left: 0.25rem; }
+    .items { border-top: 1px solid var(--ink); }
+    .item { display: grid; grid-template-columns: 7rem 1fr auto; gap: 1.25rem; padding-block: 1.25rem; border-bottom: 1px solid var(--line); }
+    .item.off .thumb { opacity: 0.5; }
+    .thumb { width: 7rem; }
+    .info { display: grid; gap: 0.2rem; align-content: start; justify-items: start; }
+    .name { text-decoration: none; font-weight: 500; }
+    .name:hover { text-decoration: underline; }
+    .controls { display: flex; align-items: center; gap: 1rem; margin-top: 0.75rem; }
+    .line { font-weight: 500; }
+    .summary { background: var(--wash); padding: 1.4286rem; }
+    .coupon { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .coupon .input { flex: 1; min-width: 10rem; }
+    .coupon-on { display: flex; justify-content: space-between; width: 100%; }
+    .ok { color: var(--ok); }
+    @media (max-width: 640px) { .item { grid-template-columns: 5.5rem 1fr; } .thumb { width: 5.5rem; } .line { grid-column: 2; } }
   `,
 })
 export class Cart {
+  constructor() { inject(PageMeta).set('Tu bolsa'); }
   private api = inject(ApiService);
   private toast = inject(ToastService);
   protected store = inject(CartStore);
   protected busy = signal(false);
   protected code = '';
+
+  count(cart: CartModel) {
+    const n = cart.items.reduce((a, i) => a + i.quantity, 0);
+    return `${n} ${n === 1 ? 'artículo' : 'artículos'}`;
+  }
 
   private run(op: Observable<CartModel>, okMsg?: string) {
     this.busy.set(true);
