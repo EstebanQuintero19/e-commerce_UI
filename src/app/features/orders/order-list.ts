@@ -1,16 +1,17 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
+import { EMPTY, catchError, switchMap, tap } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { Order, Paginated } from '../../core/models';
 import { CopPipe, ORDER_STATUS } from '../../shared/ui';
 import { PageMeta } from '../../shared/seo';
+import { ErrorState } from '../../shared/error-state';
 
 @Component({
   selector: 'app-order-list',
-  imports: [RouterLink, CopPipe, DatePipe],
+  imports: [RouterLink, CopPipe, DatePipe, ErrorState],
   template: `
     <div class="page-head"><h1>Mis pedidos</h1></div>
     @if (page(); as p) {
@@ -44,7 +45,8 @@ import { PageMeta } from '../../shared/seo';
           </div>
         }
       }
-    } @else { <div class="sk" style="height:10rem" aria-busy="true"></div> }
+    } @else if (error()) { <app-error-state (retry)="retry()" /> }
+    @else { <div class="sk" style="height:10rem" aria-busy="true"></div> }
   `,
   styles: `.btn.disabled { pointer-events: none; opacity: 0.4; }`,
 })
@@ -52,10 +54,19 @@ export class OrderList {
   private api = inject(ApiService);
   page_ = input<string | number | undefined>(undefined, { alias: 'page' });
   protected page = signal<Paginated<Order> | null>(null);
+  protected error = signal(false);
+  private attempt = signal(0);
   protected status = ORDER_STATUS;
 
   constructor() {
     inject(PageMeta).set('Mis pedidos');
-    toObservable(this.page_).pipe(switchMap((page) => this.api.orders({ page: Number(page ?? 1) }))).subscribe((p) => this.page.set(p));
+    toObservable(computed(() => [this.page_(), this.attempt()] as const))
+      .pipe(
+        tap(() => { this.page.set(null); this.error.set(false); }),
+        switchMap(([page]) => this.api.orders({ page: Number(page ?? 1) }).pipe(catchError(() => { this.error.set(true); return EMPTY; }))),
+      )
+      .subscribe((p) => this.page.set(p));
   }
+
+  retry() { this.attempt.update((n) => n + 1); }
 }

@@ -10,11 +10,10 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="preload" href="fonts/familjen-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" as="image" href="img/hero-1024.webp" imagesrcset="img/hero-640.webp 640w, img/hero-1024.webp 1024w, img/hero-1600.webp 1600w" imagesizes="100vw" fetchpriority="high">
   <meta name="theme-color" content="#ffffff">
 </head>
 <body>
-  <!-- Pantalla de carga: se dibuja una camiseta mientras arranca Angular; app.ts la retira al renderizar -->
+  <!-- Pantalla de carga: solo aparece si Angular tarda más de 350 ms en arrancar; app.ts la retira al renderizar -->
   <div id="splash" aria-hidden="true">
     <svg viewBox="0 0 300 400" width="120" height="160">
       <path class="stitch" d="M120 62 C135 80 165 80 180 62 L236 82 L276 142 L230 170 L216 152 L216 346 L84 346 L84 152 L70 170 L24 142 L64 82 Z" />
@@ -23,8 +22,9 @@
     <span>Mi Tienda</span>
   </div>
   <style>
-    #splash { position: fixed; inset: 0; z-index: 100; background: #fff; display: grid; place-content: center; justify-items: center; gap: 1rem; font-family: 'Familjen Grotesk', Arial, sans-serif; font-weight: 700; font-size: 1.25rem; letter-spacing: -0.04em; color: #000; transition: opacity 260ms ease-out; }
-    html.ready #splash { opacity: 0; pointer-events: none; }
+    #splash { position: fixed; inset: 0; z-index: 100; background: #fff; display: grid; place-content: center; justify-items: center; gap: 1rem; font-family: 'Familjen Grotesk', Arial, sans-serif; font-weight: 700; font-size: 1.25rem; letter-spacing: -0.04em; color: #000; opacity: 0; animation: splash-in 0s 350ms forwards; }
+    @keyframes splash-in { to { opacity: 1; } }
+    html.ready #splash { animation: none; opacity: 0; pointer-events: none; }
     #splash .stitch { fill: none; stroke: #000; stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 8 8; stroke-dashoffset: 0; animation: stitch 1.2s linear infinite; }
     #splash .neck { stroke-width: 3; }
     @keyframes stitch { to { stroke-dashoffset: -32; } }

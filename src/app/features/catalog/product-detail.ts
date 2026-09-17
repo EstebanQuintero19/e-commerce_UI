@@ -1,8 +1,10 @@
 import { Component, HostListener, computed, inject, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
+import { EMPTY, catchError, switchMap, tap } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
+import { CartStore } from '../../core/cart.store';
 import { FavoritesStore } from '../../core/favorites.store';
 import { Product } from '../../core/models';
 import { productBadges } from '../../shared/badges';
@@ -11,10 +13,12 @@ import { ProductCard } from '../../shared/product-card';
 import { ProductImageComponent } from '../../shared/product-image';
 import { PageMeta } from '../../shared/seo';
 import { CopPipe, GENDER_LABEL } from '../../shared/ui';
+import { ErrorState } from '../../shared/error-state';
+import { NotFound } from '../errors/not-found';
 
 @Component({
   selector: 'app-product-detail',
-  imports: [RouterLink, ProductImageComponent, BuyBox, ProductCard],
+  imports: [RouterLink, ProductImageComponent, BuyBox, ProductCard, ErrorState, NotFound, CopPipe],
   template: `
     @if (product(); as p) {
       <nav class="crumbs" aria-label="Estás en">
@@ -50,7 +54,7 @@ import { CopPipe, GENDER_LABEL } from '../../shared/ui';
 
             <details class="info">
               <summary>Envío y devoluciones</summary>
-              <p>Envío a todo el país; gratis desde $ 250.000. Tienes 30 días para solicitar una devolución desde tu pedido.</p>
+              <p>Envío a todo el país@if (cartStore.cart()?.shipping_free_from; as free) {; gratis desde {{ free | cop }}}. Tienes 15 días desde la entrega para solicitar una devolución desde tu pedido.</p>
             </details>
             <details class="info">
               <summary>Guía de tallas</summary>
@@ -96,7 +100,9 @@ import { CopPipe, GENDER_LABEL } from '../../shared/ui';
         </div>
       }
     } @else if (notFound()) {
-      <div class="empty"><h2>Este producto ya no está disponible</h2><a class="btn" routerLink="/productos">Volver a la tienda</a></div>
+      <app-not-found title="Este producto ya no está" text="Se agotó o se retiró del catálogo. Lo que sí tenemos está a un clic." />
+    } @else if (error()) {
+      <app-error-state (retry)="retry()" />
     } @else {
       <div class="layout" aria-busy="true">
         <div class="sk" style="aspect-ratio:3/4"></div>
@@ -153,12 +159,15 @@ import { CopPipe, GENDER_LABEL } from '../../shared/ui';
 })
 export class ProductDetail {
   private api = inject(ApiService);
+  protected cartStore = inject(CartStore);
 
   id = input.required<string>();
 
   protected product = signal<Product | null>(null);
   protected related = signal<Product[]>([]);
   protected notFound = signal(false);
+  protected error = signal(false);
+  private attempt = signal(0);
   protected fav = inject(FavoritesStore);
   private meta = inject(PageMeta);
   protected genderLabel = GENDER_LABEL;
@@ -170,12 +179,14 @@ export class ProductDetail {
   protected badges = computed(() => (this.product() ? productBadges(this.product()!) : []));
 
   constructor() {
-    toObservable(this.id)
-      .pipe(switchMap((id) => this.api.product(Number(id))))
+    toObservable(computed(() => [this.id(), this.attempt()] as const))
+      .pipe(
+        tap(() => { this.product.set(null); this.notFound.set(false); this.error.set(false); }),
+        switchMap(([id]) => this.api.product(Number(id)).pipe(catchError((e: HttpErrorResponse) => { (e.status === 404 ? this.notFound : this.error).set(true); return EMPTY; }))),
+      )
       .subscribe({
         next: (p) => {
           this.product.set(p);
-          this.notFound.set(false);
           window.scrollTo({ top: 0 });
           const price = new CopPipe().transform(Math.min(...(p.variants?.map((v) => v.price) ?? [0])));
           this.meta.set(p.name, { description: `${p.name} · ${price}. ${p.description ?? ''}`.trim(), image: p.image, type: 'product' });
@@ -184,9 +195,10 @@ export class ProductDetail {
             this.api.products({ category_id: p.category.parent_id ?? p.category.id, per_page: 5 }).subscribe((r) => this.related.set(r.data.filter((x) => x.id !== p.id).slice(0, 4)));
           }
         },
-        error: () => this.notFound.set(true),
       });
   }
+
+  retry() { this.attempt.update((n) => n + 1); }
 
   // Fotos del color elegido; si ninguna tiene color, todas. Las fotos sin color siempre acompañan.
   galleryFor(p: Product, color: string | null) {

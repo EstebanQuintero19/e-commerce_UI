@@ -16,15 +16,16 @@ export const routes: Routes = [
       { path: 'reset-password', loadComponent: () => import('./features/auth/reset-password').then((m) => m.ResetPassword) },
       { path: 'carrito', loadComponent: () => import('./features/cart/cart').then((m) => m.Cart) },
       { path: 'favoritos', loadComponent: () => import('./features/favorites/favorites').then((m) => m.Favorites) },
+      // Comprar y seguir un pedido no exige cuenta: el invitado se identifica con el token del pedido (core/guest-orders.ts).
+      { path: 'checkout', loadComponent: () => import('./features/checkout/checkout').then((m) => m.Checkout) },
+      // Aquí vuelve el cliente desde la pasarela (MP_BACK_URL). Con el driver fake se llega desde el checkout.
+      { path: 'checkout/result', loadComponent: () => import('./features/checkout/payment-result').then((m) => m.PaymentResult) },
+      { path: 'pedidos/:id', loadComponent: () => import('./features/orders/order-detail').then((m) => m.OrderDetail) },
       {
         path: '',
         canActivate: [authGuard],
         children: [
-          { path: 'checkout', loadComponent: () => import('./features/checkout/checkout').then((m) => m.Checkout) },
-          // Aquí vuelve el cliente desde la pasarela (MP_BACK_URL). Con el driver fake se llega desde el checkout.
-          { path: 'checkout/result', loadComponent: () => import('./features/checkout/payment-result').then((m) => m.PaymentResult) },
           { path: 'pedidos', loadComponent: () => import('./features/orders/order-list').then((m) => m.OrderList) },
-          { path: 'pedidos/:id', loadComponent: () => import('./features/orders/order-detail').then((m) => m.OrderDetail) },
           { path: 'facturas', loadComponent: () => import('./features/invoices/invoice-list').then((m) => m.InvoiceList) },
           { path: 'cuenta', loadComponent: () => import('./features/account/addresses').then((m) => m.Addresses) },
         ],
@@ -43,7 +44,7 @@ export const routes: Routes = [
           { path: 'envios', loadComponent: () => import('./features/admin/admin-shipping').then((m) => m.AdminShipping) },
         ],
       },
+      { path: '**', loadComponent: () => import('./features/errors/not-found').then((m) => m.NotFound) },
     ],
   },
-  { path: '**', redirectTo: '' },
 ];

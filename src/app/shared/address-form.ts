@@ -10,7 +10,7 @@ export const STATES = [
   'Putumayo', 'Quindío', 'Risaralda', 'San Andrés y Providencia', 'Santander', 'Sucre', 'Tolima', 'Valle del Cauca', 'Vaupés', 'Vichada',
 ];
 
-// Crear o editar una dirección. Emite `saved` con la dirección guardada.
+// Crear o editar una dirección. Emite `saved` con la dirección guardada; con `local`, solo la valida y la emite (compra sin cuenta).
 @Component({
   selector: 'app-address-form',
   imports: [ReactiveFormsModule],
@@ -53,7 +53,7 @@ export const STATES = [
         </div>
       </div>
       <div class="row">
-        <button class="btn btn-solid" [disabled]="busy()">{{ address() ? 'Guardar cambios' : 'Guardar dirección' }}</button>
+        <button class="btn btn-solid" [disabled]="busy()">{{ local() ? 'Usar esta dirección' : address() ? 'Guardar cambios' : 'Guardar dirección' }}</button>
         @if (cancellable()) { <button type="button" class="btn btn-ghost" (click)="cancelled.emit()">Cancelar</button> }
       </div>
     </form>
@@ -66,6 +66,7 @@ export class AddressForm {
 
   address = input<Address | null>(null);
   cancellable = input(false);
+  local = input(false);
   saved = output<Address>();
   cancelled = output<void>();
 
@@ -92,6 +93,7 @@ export class AddressForm {
     if (this.form.invalid) return;
     this.busy.set(true);
     const input: AddressInput = this.form.getRawValue();
+    if (this.local()) { this.busy.set(false); this.saved.emit({ id: 0, ...input }); return; }
     const req = this.address() ? this.api.updateAddress(this.address()!.id, input) : this.api.createAddress(input);
     req.subscribe({
       next: (a) => { this.busy.set(false); this.saved.emit(a); },

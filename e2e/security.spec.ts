@@ -27,8 +27,10 @@ test.describe('Hardening', () => {
       await page.getByLabel('Correo').fill(email);
       await page.getByLabel('Contraseña').fill(password);
       await page.getByRole('button', { name: 'Iniciar sesión' }).click();
-      // Nunca sale del origen: aterriza en la tienda (o en el inicio si el router no pudo interpretar el parámetro).
-      await expect(page).toHaveURL(/^http:\/\/localhost:4200\/(productos)?$/);
+      // Nunca sale del origen: aterriza en la tienda (o en la 404 propia si el parámetro era un path interno inexistente).
+      await expect(page).not.toHaveURL(/\/login/); // el login terminó...
+      expect(page.url()).toMatch(/^http:\/\/localhost:4200\//); // ...y nunca salió del origen
+      if (/evil/.test(page.url())) await expect(page.locator('app-not-found')).toBeVisible(); // '/evil.example' es un path interno: 404 propia
       expect(await page.evaluate(() => localStorage.getItem('user'))).not.toBeNull(); // la sesión sí se creó
       await page.evaluate(() => localStorage.clear());
       await page.context().clearCookies();
@@ -93,7 +95,7 @@ test.describe('Hardening', () => {
   test('rutas privadas piden sesión y conservan el destino', async ({ page }) => {
     await page.goto('/pedidos');
     await expect(page).toHaveURL(/\/login\?redirect=%2Fpedidos/);
-    await page.goto('/checkout');
+    await page.goto('/cuenta');
     await expect(page).toHaveURL(/\/login/);
   });
 

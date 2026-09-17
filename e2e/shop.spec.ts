@@ -9,7 +9,7 @@ async function firstProductWithStock(page: Page) {
 }
 
 test.describe('Compra completa', () => {
-  test('invitado agrega a la bolsa, se registra en el checkout y paga', async ({ page, isMobile }) => {
+  test('invitado agrega a la bolsa y paga sin cuenta; el pedido se sigue por token', async ({ page, isMobile }) => {
     const product = await firstProductWithStock(page);
 
     // Catálogo: el listado carga y la tarjeta lleva al detalle.
@@ -27,27 +27,19 @@ test.describe('Compra completa', () => {
     await expect(page).toHaveURL(/\/carrito/);
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Tu bolsa');
 
-    // El checkout pide cuenta: registro con la bolsa de invitado, que se conserva.
+    // El checkout no pide cuenta: correo + dirección (no se guarda) y cotización de envío.
     await page.getByRole('link', { name: 'Continuar al pago' }).click();
-    await expect(page).toHaveURL(/\/login/);
-    await page.getByRole('link', { name: 'Crea tu cuenta' }).click();
-    const email = `e2e-${Date.now()}@test.co`;
-    await page.getByLabel('Nombre').fill('E2E Cliente');
-    await page.getByLabel('Correo').fill(email);
-    await page.getByLabel('Contraseña (mínimo 8 caracteres)').fill('clave-e2e-123');
-    await page.getByLabel('Repite la contraseña').fill('clave-e2e-123');
-    await page.getByRole('button', { name: 'Crear cuenta' }).click();
     await expect(page).toHaveURL(/\/checkout/);
     await expect(page.getByText(product.name).first()).toBeVisible();
-
-    // Dirección nueva y cotización de envío.
-    await page.getByLabel('Quién recibe').fill('E2E Cliente');
+    await expect(page.getByRole('button', { name: 'Confirmar y pagar' })).toBeDisabled();
+    await page.getByLabel('Correo').fill(`e2e-${Date.now()}@test.co`);
+    await page.getByLabel('Quién recibe').fill('E2E Invitado');
     await page.getByLabel('Teléfono').fill('3000000000');
     await page.getByPlaceholder('Calle 10 # 20-30').fill('Calle 1 # 2-3');
     await page.getByLabel('Ciudad').fill('Bogotá');
     await page.getByLabel('Departamento').selectOption('Cundinamarca');
-    await page.getByRole('button', { name: 'Guardar dirección' }).click();
-    await expect(page.getByText('Usar otra dirección')).toBeVisible();
+    await page.getByRole('button', { name: 'Usar esta dirección' }).click();
+    await expect(page.getByRole('button', { name: 'Cambiar' })).toBeVisible();
 
     // Confirmar → pago simulado → aprobado.
     await page.getByRole('button', { name: 'Confirmar y pagar' }).click();
@@ -57,6 +49,12 @@ test.describe('Compra completa', () => {
     await page.getByRole('link', { name: 'Ver pedido' }).click();
     await expect(page.getByText('Pagado').first()).toBeVisible();
     if (!isMobile) await expect(page.getByRole('list', { name: 'Estado del pedido' })).toContainText('Pagado');
+
+    // Sin el token (otro navegador, sin el enlace del correo) el pedido no se ve.
+    const orderUrl = page.url();
+    await page.evaluate(() => localStorage.removeItem('guest_orders'));
+    await page.goto(orderUrl);
+    await expect(page).not.toHaveURL(/\/pedidos\//);
   });
 });
 

@@ -2,13 +2,15 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { forkJoin, map } from 'rxjs';
 import { ApiService } from '../../core/api.service';
+import { CartStore } from '../../core/cart.store';
 import { Category, Product, ProductImage } from '../../core/models';
 import { ProductCard } from '../../shared/product-card';
 import { PageMeta } from '../../shared/seo';
+import { CopPipe } from '../../shared/ui';
 
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, ProductCard],
+  imports: [RouterLink, ProductCard, CopPipe],
   template: `
     <section class="hero bleed">
       <img src="img/hero-1024.webp" srcset="img/hero-640.webp 640w, img/hero-1024.webp 1024w, img/hero-1600.webp 1600w" sizes="100vw" alt="" fetchpriority="high" width="1600" height="889" />
@@ -61,8 +63,8 @@ import { PageMeta } from '../../shared/seo';
     </section>
 
     <section class="props">
-      <div><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><strong>Envío gratis desde $ 250.000</strong><span>A todo el país.</span></div>
-      <div><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/></svg><strong>30 días para devolver</strong><span>Desde tu pedido, sin preguntas.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><strong>Envío gratis desde {{ (cartStore.cart()?.shipping_free_from ?? 0) | cop }}</strong><span>A todo el país.</span></div>
+      <div><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/></svg><strong>15 días para devolver</strong><span>Desde la entrega, sin preguntas.</span></div>
       <div><svg viewBox="0 0 24 24"><path d="M12 3c-4 4-6 7-6 11a6 6 0 0 0 12 0c0-4-2-7-6-11z"/></svg><strong>Algodón colombiano</strong><span>Hecho aquí, con talleres locales.</span></div>
     </section>
   `,
@@ -104,6 +106,7 @@ import { PageMeta } from '../../shared/seo';
 })
 export class Home {
   private api = inject(ApiService);
+  protected cartStore = inject(CartStore);
   protected news = signal<Product[]>([]);
   protected cats = signal<{ category: Category; image: ProductImage | null }[]>([]);
 

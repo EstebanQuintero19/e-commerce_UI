@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 
 const SITE = 'Mi Tienda';
-const DEFAULT_DESC = 'Ropa de algodón hecha en Colombia para mujer y hombre. Envío gratis desde $ 250.000.';
+const DEFAULT_DESC = 'Ropa de algodón hecha en Colombia para mujer y hombre. Envío a todo el país y 15 días para devolver.';
 
 // Título y metadatos por página (pestaña, buscadores y al compartir el enlace).
 @Injectable({ providedIn: 'root' })

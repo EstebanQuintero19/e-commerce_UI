@@ -57,7 +57,7 @@ export interface OrderItem {
 export interface Shipment { carrier: string; tracking_number: string; shipped_at: string; delivered_at: string | null; }
 export interface OrderReturn { reason: string; requested_at: string; refunded_at: string | null; }
 export interface Order {
-  id: number; user_id: number; status: OrderStatus;
+  id: number; user_id: number | null; email: string; guest_token?: string; status: OrderStatus;
   subtotal: number; discount: number; coupon_code: string | null; tax: number; shipping_cost: number; total: number;
   shipping_address: AddressInput; shipment: Shipment | null; return: OrderReturn | null;
   items?: OrderItem[]; created_at: string;

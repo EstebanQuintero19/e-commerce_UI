@@ -103,8 +103,9 @@ export class ApiService {
   removeCoupon() {
     return this.http.delete<Wrapped<Cart>>(`${this.base}/cart/coupon`).pipe(map((r) => r.data));
   }
-  shippingQuote(address_id: number) {
-    return this.http.get<ShippingQuote>(`${this.base}/shipping/quote`, { params: { address_id } });
+  // Dirección guardada (con cuenta) o solo el departamento (sin cuenta).
+  shippingQuote(q: { address_id?: number; state?: string }) {
+    return this.http.get<ShippingQuote>(`${this.base}/shipping/quote`, { params: this.params(q) });
   }
 
   // ---- Orders ----
@@ -114,8 +115,9 @@ export class ApiService {
   order(id: number) {
     return this.http.get<Wrapped<Order>>(`${this.base}/orders/${id}`).pipe(map((r) => r.data));
   }
-  placeOrder(address_id: number) {
-    return this.http.post<Wrapped<Order>>(`${this.base}/orders`, { address_id }).pipe(map((r) => r.data));
+  // Con cuenta: address_id. Sin cuenta: email + address (la orden devuelve guest_token una sola vez).
+  placeOrder(input: { address_id?: number; address?: AddressInput; email?: string }) {
+    return this.http.post<Wrapped<Order>>(`${this.base}/orders`, input).pipe(map((r) => r.data));
   }
   cancelOrder(id: number) {
     return this.http.post<Wrapped<Order>>(`${this.base}/orders/${id}/cancel`, {}).pipe(map((r) => r.data));

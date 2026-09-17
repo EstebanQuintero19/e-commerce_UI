@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
-import { switchMap, tap } from 'rxjs';
+import { catchError, of, switchMap, tap } from 'rxjs';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { Category, Gender, Paginated, Product, ProductFilters, ProductSort } from '../../core/models';
@@ -8,10 +8,11 @@ import { ProductCard } from '../../shared/product-card';
 import { swatch } from '../../shared/product-image';
 import { PageMeta } from '../../shared/seo';
 import { CopPipe, GENDER_LABEL } from '../../shared/ui';
+import { ErrorState } from '../../shared/error-state';
 
 @Component({
   selector: 'app-product-list',
-  imports: [RouterLink, ProductCard],
+  imports: [RouterLink, ProductCard, ErrorState],
   template: `
     <nav class="crumbs" aria-label="Estás en">
       <a routerLink="/">Inicio</a>
@@ -107,6 +108,8 @@ import { CopPipe, GENDER_LABEL } from '../../shared/ui';
           <div class="sk-card"><div class="sk sk-img"></div><div class="sk sk-text" style="width:60%"></div><div class="sk sk-text" style="width:30%"></div></div>
         }
       </div>
+    } @else if (error()) {
+      <app-error-state (retry)="retry()" />
     } @else if (page()?.data?.length === 0) {
       <div class="empty">
         <h2>No encontramos nada</h2>
@@ -192,6 +195,8 @@ export class ProductList {
   protected facets = signal<ProductFilters | null>(null);
   protected page = signal<Paginated<Product> | null>(null);
   protected loading = signal(true);
+  protected error = signal(false);
+  private attempt = signal(0);
   protected open = signal(false);
   protected skeleton = [1, 2, 3, 4, 5, 6, 7, 8];
   protected genderLabel = GENDER_LABEL;
@@ -209,10 +214,15 @@ export class ProductList {
       q: this.q(), gender: this.gender(), badge: this.badge(), category_id: this.category_id(), size: this.size(), color: this.color(),
       price_min: this.price_min(), price_max: this.price_max(), sort: this.sort(), page: Number(this.page_() ?? 1),
     }));
-    toObservable(filters)
-      .pipe(tap(() => { this.loading.set(true); this.meta.set(this.title()); }), switchMap((f) => this.api.products(f)))
-      .subscribe({ next: (p) => { this.page.set(p); this.loading.set(false); }, error: () => this.loading.set(false) });
+    toObservable(computed(() => [filters(), this.attempt()] as const))
+      .pipe(
+        tap(() => { this.loading.set(true); this.error.set(false); this.meta.set(this.title()); }),
+        switchMap(([f]) => this.api.products(f).pipe(catchError(() => { this.error.set(true); return of(null); }))),
+      )
+      .subscribe((p) => { if (p) this.page.set(p); this.loading.set(false); });
   }
+
+  retry() { this.attempt.update((n) => n + 1); }
 
   childrenOf(id: number) { return this.categories().filter((c) => c.parent_id === id); }
 

@@ -12,12 +12,13 @@ import { BagDrawer } from '../shared/bag-drawer';
 import { ProductImageComponent } from '../shared/product-image';
 import { QuickView } from '../shared/quick-view';
 import { CopPipe, ToastService } from '../shared/ui';
+import { ErrorState } from '../shared/error-state';
 
 const GENDERS: { key: Gender; label: string }[] = [{ key: 'mujer', label: 'Mujer' }, { key: 'hombre', label: 'Hombre' }];
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, QuickView, BagDrawer, ProductImageComponent, CopPipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, QuickView, BagDrawer, ProductImageComponent, CopPipe, ErrorState],
   template: `
     <div class="progress" [class.on]="navigating()" aria-hidden="true"></div>
 
@@ -129,7 +130,9 @@ const GENDERS: { key: Gender; label: string }[] = [{ key: 'mujer', label: 'Mujer
       }
     </header>
 
-    <main class="container page"><router-outlet /></main>
+    <main class="container page">
+      @if (navError()) { <app-error-state title="No pudimos abrir esta página" (retry)="location.reload()" /> } @else { <router-outlet /> }
+    </main>
 
     <footer class="ftr">
       <div class="container ftr-in">
@@ -142,19 +145,13 @@ const GENDERS: { key: Gender; label: string }[] = [{ key: 'mujer', label: 'Mujer
           <a routerLink="/productos" [queryParams]="{ gender: 'mujer' }">Mujer</a>
           <a routerLink="/productos" [queryParams]="{ gender: 'hombre' }">Hombre</a>
           <a routerLink="/productos" [queryParams]="{ badge: 'Nuevo' }">Novedades</a>
-          <a routerLink="/favoritos">Favoritos</a>
+          @if (auth.isLoggedIn()) { <a routerLink="/pedidos">Mis pedidos</a> } @else { <a routerLink="/login">Iniciar sesión</a> }
         </div>
         <div class="ftr-col">
           <strong>Compras</strong>
-          <a routerLink="/pedidos">Mis pedidos</a>
-          <a routerLink="/facturas">Mis facturas</a>
-          <a routerLink="/cuenta">Mi cuenta</a>
-        </div>
-        <div class="ftr-col">
-          <strong>Ayuda</strong>
-          <span class="muted">Envío gratis desde $ 250.000.</span>
-          <span class="muted">Devoluciones dentro de 30 días.</span>
-          <span class="muted">Precios en pesos colombianos, IVA incluido.</span>
+          @if (cartStore.cart()?.shipping_free_from; as free) { <span class="muted">Envío a todo el país; gratis desde {{ free | cop }}.</span> }
+          <span class="muted">15 días para devolver desde la entrega.</span>
+          <span class="muted">Precios en pesos colombianos con IVA incluido.</span>
         </div>
       </div>
     </footer>
@@ -254,6 +251,8 @@ export class Shell {
   protected suggestOpen = signal(false);
   protected suggestions = signal<Product[] | null>(null);
   protected navigating = signal(false);
+  protected navError = signal(false);
+  protected location = location;
   protected bump = signal(false);
   protected q = signal('');
   private searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
@@ -270,6 +269,7 @@ export class Shell {
       if (e instanceof NavigationStart) { timer = setTimeout(() => this.navigating.set(true), 150); }
       if (e instanceof NavigationEnd || e instanceof NavigationCancel || e instanceof NavigationError) {
         clearTimeout(timer); this.navigating.set(false); this.menu.set(false); this.mega.set(null);
+        this.navError.set(e instanceof NavigationError); // casi siempre un chunk lazy que no bajó (sin red o despliegue nuevo)
       }
     });
     let last = this.cartStore.count();

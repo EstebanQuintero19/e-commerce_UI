@@ -5,6 +5,7 @@ import { catchError, switchMap, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { guestCartToken } from './guest';
+import { GuestOrders } from './guest-orders';
 
 // Sesión en cookie HttpOnly (Sanctum SPA): las peticiones a nuestra API van con credenciales y, si escriben, con el
 // token CSRF que Laravel deja en la cookie XSRF-TOKEN. Nada de esto viaja a otros hosts. 401 con sesión → limpia y a /login.
@@ -14,12 +15,16 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const http = inject(HttpClient);
+  const orderTokens = inject(GuestOrders).header();
 
   const send = (r: HttpRequest<unknown>) => {
     const xsrf = xsrfToken();
     return next(r.clone({
       withCredentials: true,
-      setHeaders: { Accept: 'application/json', 'X-Cart-Token': guestCartToken(), ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}) },
+      setHeaders: {
+        Accept: 'application/json', 'X-Cart-Token': guestCartToken(),
+        ...(xsrf ? { 'X-XSRF-TOKEN': xsrf } : {}), ...(orderTokens ? { 'X-Order-Tokens': orderTokens } : {}),
+      },
     }));
   };
   const csrf = () => http.get(CSRF_URL, { withCredentials: true });

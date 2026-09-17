@@ -1,22 +1,24 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { safeGatewayUrl } from '../../core/safe-url';
 import { AuthService } from '../../core/auth.service';
+import { GuestOrders } from '../../core/guest-orders';
 import { Invoice, Order, Payment } from '../../core/models';
 import { openBlob } from '../../core/safe-url';
 import { CopPipe, ORDER_STATUS, PAYMENT_STATUS, ToastService, errorMessage, uuid } from '../../shared/ui';
 import { PageMeta } from '../../shared/seo';
+import { NotFound } from '../errors/not-found';
 
 @Component({
   selector: 'app-order-detail',
-  imports: [RouterLink, FormsModule, CopPipe, DatePipe],
+  imports: [RouterLink, FormsModule, CopPipe, DatePipe, NotFound],
   template: `
     @if (order(); as o) {
-      <p class="small"><a routerLink="/pedidos">← Mis pedidos</a></p>
+      @if (auth.isLoggedIn()) { <p class="small"><a routerLink="/pedidos">← Mis pedidos</a></p> }
       <div class="page-head">
         <div>
           <h1>Pedido #{{ o.id }}</h1>
@@ -102,12 +104,13 @@ import { PageMeta } from '../../shared/seo';
           <dl class="sum">
             <dt>Subtotal</dt><dd class="num">{{ o.subtotal | cop }}</dd>
             @if (o.discount) { <dt>Descuento {{ o.coupon_code }}</dt><dd class="num">−{{ o.discount | cop }}</dd> }
-            <dt>IVA</dt><dd class="num">{{ o.tax | cop }}</dd>
+            <dt class="muted small">Incluye IVA</dt><dd class="num muted small">{{ o.tax | cop }}</dd>
             <dt>Envío</dt><dd class="num">{{ o.shipping_cost ? (o.shipping_cost | cop) : 'Gratis' }}</dd>
             <dt class="big">Total</dt><dd class="num big">{{ o.total | cop }}</dd>
           </dl>
         </aside>
       </div>
+    } @else if (notFound()) { <app-not-found title="Este pedido no existe" text="Puede que el enlace esté mal o que el pedido sea de otra cuenta." />
     } @else { <div class="stack" aria-busy="true"><div class="sk sk-text" style="width:30%;height:1.6em"></div><div class="sk" style="height:12rem"></div></div> }
   `,
   styles: `
@@ -128,12 +131,15 @@ import { PageMeta } from '../../shared/seo';
 })
 export class OrderDetail {
   private api = inject(ApiService);
-  private auth = inject(AuthService);
+  protected auth = inject(AuthService);
   private router = inject(Router);
   private toast = inject(ToastService);
+  private guestOrders = inject(GuestOrders);
 
   id = input.required<string>();
+  token = input<string>(); // enlace del correo de una compra sin cuenta
   protected order = signal<Order | null>(null);
+  protected notFound = signal(false);
   protected payments = signal<Payment[]>([]);
   protected invoice = signal<Invoice | null>(null);
   protected busy = signal(false);
@@ -144,7 +150,10 @@ export class OrderDetail {
 
   constructor() {
     inject(PageMeta).set('Pedido');
-    toObservable(this.id).subscribe(() => this.load());
+    toObservable(computed(() => [this.id(), this.token()] as const)).subscribe(([id, token]) => {
+      if (token) this.guestOrders.remember(Number(id), token);
+      this.load();
+    });
   }
 
   private load() {
@@ -153,15 +162,22 @@ export class OrderDetail {
       next: (o) => {
         this.order.set(o);
         this.api.paymentsOf(id).subscribe((p) => this.payments.set(p));
-        if (!['pending', 'cancelled'].includes(o.status)) {
+        if (this.auth.isLoggedIn() && !['pending', 'cancelled'].includes(o.status)) {
           this.api.invoices().subscribe((r) => this.invoice.set(r.data.find((i) => i.order_id === id) ?? null));
         }
       },
-      error: (e) => { this.toast.error(errorMessage(e)); this.router.navigate(['/pedidos']); },
+      error: (e) => {
+        if (e.status === 404) return this.notFound.set(true);
+        this.toast.error(errorMessage(e)); this.router.navigate([this.auth.isLoggedIn() ? '/pedidos' : '/']);
+      },
     });
   }
 
-  canReturn(o: Order) { return ['paid', 'shipped', 'delivered'].includes(o.status) && !this.auth.isAdmin(); }
+  canReturn(o: Order) {
+    const delivered = o.shipment?.delivered_at ? new Date(o.shipment.delivered_at).getTime() : null;
+    const inWindow = !delivered || Date.now() - delivered < 15 * 86_400_000; // mismo plazo que ecommerce.return_days
+    return ['paid', 'shipped', 'delivered'].includes(o.status) && inWindow && !this.auth.isAdmin();
+  }
 
   pay() {
     const o = this.order()!;

@@ -72,7 +72,7 @@ import { PageMeta } from '../../shared/seo';
             <dl class="sum">
               <dt>Subtotal</dt><dd>{{ cart.subtotal | cop }}</dd>
               @if (cart.discount) { <dt>Descuento</dt><dd>−{{ cart.discount | cop }}</dd> }
-              <dt>IVA</dt><dd>{{ cart.tax | cop }}</dd>
+              <dt class="muted small">Incluye IVA</dt><dd class="muted small">{{ cart.tax | cop }}</dd>
               <dt>Envío</dt><dd class="muted">según tu dirección</dd>
               <dt class="big">Total</dt><dd class="big">{{ cart.total | cop }}</dd>
             </dl>
